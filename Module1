@@ -1,0 +1,2497 @@
+Option Explicit
+
+Type ConversationCount
+    ConversationSubject As String
+    Count As Integer
+End Type
+'
+'
+' https://docs.microsoft.com/en-us/office/vba/api/overview/outlook
+'
+'
+
+Sub OpenTimeOffURL()
+    ' Open url
+    Shell "C:\Program Files\Google\Chrome\Application\chrome.exe" & " https://timeoff.stjude.org/"
+End Sub
+Private Function AddCategoryToItem(mailItem As Outlook.mailItem, _
+                                   category As String) As Boolean
+    If Strings.Len(mailItem.Categories) < 1 Then
+        ' mailItem does not currently have a category, so set and return
+        mailItem.Categories = category
+        mailItem.Save
+        AddCategoryToItem = True
+        Exit Function
+    ElseIf Strings.InStr(mailItem.Categories, category) > 0 Then
+        'category is already set on the mailItem, so just return
+        ' set return value to true since no error
+        AddCategoryToItem = True
+        Exit Function
+    Else
+        ' append to existing category list
+        mailItem.Categories = mailItem.Categories & ", " & category
+        mailItem.Save
+        AddCategoryToItem = True
+        Exit Function
+    End If
+End Function
+Sub DeleteAllTrash()
+    
+    Dim nameSpace As Outlook.nameSpace
+    Dim success As Boolean
+    
+    ' Get confirmation before deleting items
+    If MsgBox("Permanently delete ALL items in your Deleted Items folders, including PST files?", vbOKCancel) = vbCancel Then
+        GoTo EndSub
+    End If
+
+    Set nameSpace = Application.GetNamespace("MAPI")
+
+    ' move messages in sent folder backto the inbox
+    MoveSentMessagesToInbox
+
+    success = EmptyTrashFolder(nameSpace.GetDefaultFolder(olFolderDeletedItems))
+    success = EmptyTrashFolder(nameSpace.Folders("Online Archive - Darrell.Gentry@STJUDE.ORG").Folders("Deleted Items"))
+
+    MsgBox ("Trash Emptied")
+    
+EndSub:
+    
+End Sub
+Private Function EmptyTrashFolder(folderToEmpty As Outlook.MAPIFolder) As Boolean
+    
+    Dim intCountMailItems As Integer
+    Dim varientItem As Variant
+  
+    For intCountMailItems = folderToEmpty.Items.Count To 1 Step -1
+        Set varientItem = folderToEmpty.Items.item(intCountMailItems)
+        varientItem.Delete
+    Next intCountMailItems
+
+End Function
+Sub DisplayFolderPath()
+  Dim obj As Object
+  Dim F As Outlook.MAPIFolder
+  Dim Msg$
+  Set obj = Application.ActiveWindow
+  If TypeOf obj Is Outlook.Inspector Then
+    Set obj = obj.CurrentItem
+  Else
+    Set obj = obj.Selection(1)
+  End If
+  Set F = obj.Parent
+  Msg = "The path is: " & F.folderPath & vbCrLf
+  Msg = Msg & "Switch to the folder?"
+  If MsgBox(Msg, vbYesNo) = vbYes Then
+    Set Application.ActiveExplorer.CurrentFolder = F
+  End If
+'    Dim folder As Outlook.MAPIFolder
+'    Dim folderPath As String, currItemType As String
+'    Dim i As Integer
+'
+'    currItemType = Application.ActiveExplorer.CurrentFolder.DefaultMessageClass
+''     MsgBox "Start"
+'    If currItemType = "IPM.Note" Then  'mail Item types    https://msdn.microsoft.com/en-us/library/office/ff861573.aspx
+'        Set folder = Application.ActiveExplorer.CurrentFolder
+'        folderPath = folder.Name
+'
+''        MsgBox ("Containing Folder: " & folderPath)
+'        If Strings.InStr(folderPath, "All Mail Items") > 0 Then
+'            MsgBox ("The Display Folder Name function does not work in search results")
+'            GoTo EndSub
+'        End If
+'
+'        Do Until folder.Parent = "Mapi"
+'            Set folder = folder.Parent
+'            folderPath = folder.Name & "\" & folderPath
+'        Loop
+'
+'    End If
+'EndSub:
+'        MsgBox ("Containing Folder: " & folderPath)
+''        MsgBox "End"
+End Sub
+Sub DisplayMessageType()
+'    MsgBox ("Message Type: " & Application.ActiveExplorer.CurrentFolder.DefaultMessageClass)
+    MsgBox ("Message Type: " & Application.ActiveExplorer.Selection.Class)
+    
+End Sub
+Sub Reference()
+    '
+    ' Move selected emails to reference folder
+    '
+    Dim objNameSpace As Outlook.nameSpace
+    Dim objItem As Outlook.mailItem
+    Dim completed As Boolean
+    Dim selectedItems As Selection
+    Dim x As Long
+        
+    Set objNameSpace = Application.GetNamespace("MAPI")
+    Set selectedItems = Application.ActiveExplorer.Selection
+    
+    If selectedItems.Count < 1 Then
+        MsgBox "No item selected"
+        GoTo EndSub
+    End If
+        
+    For x = 1 To selectedItems.Count
+        If selectedItems.item(x).Class = OlObjectClass.olMail Then
+            Set objItem = selectedItems.item(x)
+            objItem.Move objNameSpace.Folders("Online Archive - Darrell.Gentry@STJUDE.ORG").Folders("GTD").Folders("Keep For Reference")
+        End If
+    Next
+EndSub:
+    
+End Sub
+Sub MoveToCleanUp()
+
+    On Error GoTo HandleError
+
+    '
+    ' Move selected emails to reference folder
+    '
+    Dim objNameSpace As Outlook.nameSpace
+    Dim objItem As Outlook.mailItem
+    Dim completed As Boolean
+    Dim selectedItems As Selection
+    Dim x As Long
+        
+    Set objNameSpace = Application.GetNamespace("MAPI")
+    Set selectedItems = Application.ActiveExplorer.Selection
+    
+    MoveSentMessagesToInbox
+    
+    If selectedItems.Count < 1 Then
+        MsgBox "No item selected"
+        GoTo EndSub
+    End If
+        
+    For x = 1 To selectedItems.Count
+        If selectedItems.item(x).Class = OlObjectClass.olMail Then
+            Set objItem = selectedItems.item(x)
+            objItem.Move objNameSpace.GetDefaultFolder(olFolderInbox).Folders("To Clean Up")
+        End If
+    Next
+    GoTo EndSub
+
+HandleError:
+
+    If Err.Number = -2147352567 Then
+        Resume Next
+    End If
+
+    Close #1
+    Open "C:\OutlookMacroLogs\EmailMoveError.log" For Append As #1
+    Print #1, ""
+    Print #1, "************************************************************"
+    Print #1, "*****        Error moving message to FYI        *****"
+    Print #1, "************************************************************"
+    Print #1, "  Timestamp: " & Format(Now(), "m/d/yy h:m:s AMPM")
+    Print #1, "  Error - Number: " & Err.Number
+    Print #1, "  Error - Description: " & Err.Description
+    Print #1, "  Error - Help Context: " & Err.HelpContext
+    Print #1, "  Error - Help File: " & Err.HelpFile
+    Print #1, "  Error - Last DLL Error: " & Err.LastDllError
+    Print #1, "  Error - Source: " & Err.Source
+    Print #1, ""
+    Print #1, "  Subject: " & objItem.Subject
+    Print #1, "  From: " & objItem.SenderEmailAddress
+    Print #1, "  To: " & objItem.To
+    Print #1, "  CC: " & objItem.CC
+    Print #1, "  BCC: " & objItem.BCC
+    Print #1, "  Received: " & objItem.ReceivedTime
+    Print #1, "************************************************************"
+    Print #1, ""
+    Close #1
+
+    Resume Next
+
+EndSub:
+    
+End Sub
+Sub FYI()
+
+    On Error GoTo HandleError
+
+    '
+    ' Move selected emails to reference folder
+    '
+    Dim objNameSpace As Outlook.nameSpace
+    Dim objItem As Outlook.mailItem
+    Dim completed As Boolean
+    Dim selectedItems As Selection
+    Dim x As Long
+        
+    Set objNameSpace = Application.GetNamespace("MAPI")
+    Set selectedItems = Application.ActiveExplorer.Selection
+    
+    MoveSentMessagesToInbox
+    
+    If selectedItems.Count < 1 Then
+        MsgBox "No item selected"
+        GoTo EndSub
+    End If
+        
+    For x = 1 To selectedItems.Count
+        If selectedItems.item(x).Class = OlObjectClass.olMail Then
+            Set objItem = selectedItems.item(x)
+            objItem.Move objNameSpace.GetDefaultFolder(olFolderInbox).Folders("FYI")
+        End If
+    Next
+    GoTo EndSub
+
+HandleError:
+
+    If Err.Number = -2147352567 Then
+        Resume Next
+    End If
+
+    Close #1
+    Open "C:\OutlookMacroLogs\EmailMoveError.log" For Append As #1
+    Print #1, ""
+    Print #1, "************************************************************"
+    Print #1, "*****        Error moving message to FYI        *****"
+    Print #1, "************************************************************"
+    Print #1, "  Timestamp: " & Format(Now(), "m/d/yy h:m:s AMPM")
+    Print #1, "  Error - Number: " & Err.Number
+    Print #1, "  Error - Description: " & Err.Description
+    Print #1, "  Error - Help Context: " & Err.HelpContext
+    Print #1, "  Error - Help File: " & Err.HelpFile
+    Print #1, "  Error - Last DLL Error: " & Err.LastDllError
+    Print #1, "  Error - Source: " & Err.Source
+    Print #1, ""
+    Print #1, "  Subject: " & objItem.Subject
+    Print #1, "  From: " & objItem.SenderEmailAddress
+    Print #1, "  To: " & objItem.To
+    Print #1, "  CC: " & objItem.CC
+    Print #1, "  BCC: " & objItem.BCC
+    Print #1, "  Received: " & objItem.ReceivedTime
+    Print #1, "************************************************************"
+    Print #1, ""
+    Close #1
+
+    Resume Next
+
+EndSub:
+    
+End Sub
+Sub NextMonday()
+    
+    On Error GoTo HandleError
+
+    '
+    ' Move selected emails to reference folder
+    '
+    Dim objNameSpace As Outlook.nameSpace
+    Dim objItem As Outlook.mailItem
+    Dim completed As Boolean
+    Dim selectedItems As Selection
+    Dim x As Long
+        
+    Set objNameSpace = Application.GetNamespace("MAPI")
+    Set selectedItems = Application.ActiveExplorer.Selection
+    
+    MoveSentMessagesToInbox
+    
+    If selectedItems.Count < 1 Then
+        MsgBox "No item selected"
+        GoTo EndSub
+    End If
+        
+    For x = 1 To selectedItems.Count
+        If selectedItems.item(x).Class = OlObjectClass.olMail Then
+            Set objItem = selectedItems.item(x)
+            objItem.UnRead = True
+            objItem.Save
+            objItem.Move objNameSpace.GetDefaultFolder(olFolderInbox).Folders("Monday Follow Up")
+        End If
+    Next
+    
+    GoTo EndSub
+
+HandleError:
+
+    If Err.Number = -2147352567 Then
+        Resume Next
+    End If
+        
+    Close #1
+    Open "C:\OutlookMacroLogs\EmailMoveError.log" For Append As #1
+    Print #1, ""
+    Print #1, "************************************************************"
+    Print #1, "*****   Error moving message to Next Monday Follow Up  *****"
+    Print #1, "************************************************************"
+    Print #1, "  Timestamp: " & Format(Now(), "m/d/yy h:m:s AMPM")
+    Print #1, "  Error - Number: " & Err.Number
+    Print #1, "  Error - Description: " & Err.Description
+    Print #1, "  Error - Help Context: " & Err.HelpContext
+    Print #1, "  Error - Help File: " & Err.HelpFile
+    Print #1, "  Error - Last DLL Error: " & Err.LastDllError
+    Print #1, "  Error - Source: " & Err.Source
+    Print #1, ""
+    Print #1, "  Subject: " & objItem.Subject
+    Print #1, "  From: " & objItem.SenderEmailAddress
+    Print #1, "  To: " & objItem.To
+    Print #1, "  CC: " & objItem.CC
+    Print #1, "  BCC: " & objItem.BCC
+    Print #1, "  Received: " & objItem.ReceivedTime
+    Print #1, "************************************************************"
+    Print #1, ""
+    Close #1
+    
+    Resume Next
+
+EndSub:
+        
+End Sub
+Sub NextTuesday()
+    
+    On Error GoTo HandleError
+
+    '
+    ' Move selected emails to reference folder
+    '
+    Dim objNameSpace As Outlook.nameSpace
+    Dim objItem As Outlook.mailItem
+    Dim completed As Boolean
+    Dim selectedItems As Selection
+    Dim x As Long
+        
+    Set objNameSpace = Application.GetNamespace("MAPI")
+    Set selectedItems = Application.ActiveExplorer.Selection
+    
+    MoveSentMessagesToInbox
+    
+    If selectedItems.Count < 1 Then
+        MsgBox "No item selected"
+        GoTo EndSub
+    End If
+        
+    For x = 1 To selectedItems.Count
+        If selectedItems.item(x).Class = OlObjectClass.olMail Then
+            Set objItem = selectedItems.item(x)
+            objItem.UnRead = True
+            objItem.Save
+            objItem.Move objNameSpace.GetDefaultFolder(olFolderInbox).Folders("Tuesday Follow Up")
+        End If
+    Next
+    
+    GoTo EndSub
+
+HandleError:
+
+    If Err.Number = -2147352567 Then
+        Resume Next
+    End If
+        
+    Close #1
+    Open "C:\OutlookMacroLogs\EmailMoveError.log" For Append As #1
+    Print #1, ""
+    Print #1, "************************************************************"
+    Print #1, "*****   Error moving message to Next Tuesday Follow Up  *****"
+    Print #1, "************************************************************"
+    Print #1, "  Timestamp: " & Format(Now(), "m/d/yy h:m:s AMPM")
+    Print #1, "  Error - Number: " & Err.Number
+    Print #1, "  Error - Description: " & Err.Description
+    Print #1, "  Error - Help Context: " & Err.HelpContext
+    Print #1, "  Error - Help File: " & Err.HelpFile
+    Print #1, "  Error - Last DLL Error: " & Err.LastDllError
+    Print #1, "  Error - Source: " & Err.Source
+    Print #1, ""
+    Print #1, "  Subject: " & objItem.Subject
+    Print #1, "  From: " & objItem.SenderEmailAddress
+    Print #1, "  To: " & objItem.To
+    Print #1, "  CC: " & objItem.CC
+    Print #1, "  BCC: " & objItem.BCC
+    Print #1, "  Received: " & objItem.ReceivedTime
+    Print #1, "************************************************************"
+    Print #1, ""
+    Close #1
+    
+    Resume Next
+
+EndSub:
+        
+End Sub
+Sub NextWednesday()
+    
+    On Error GoTo HandleError
+
+    '
+    ' Move selected emails to reference folder
+    '
+    Dim objNameSpace As Outlook.nameSpace
+    Dim objItem As Outlook.mailItem
+    Dim completed As Boolean
+    Dim selectedItems As Selection
+    Dim x As Long
+        
+    Set objNameSpace = Application.GetNamespace("MAPI")
+    Set selectedItems = Application.ActiveExplorer.Selection
+    
+    MoveSentMessagesToInbox
+    
+    If selectedItems.Count < 1 Then
+        MsgBox "No item selected"
+        GoTo EndSub
+    End If
+        
+    For x = 1 To selectedItems.Count
+        If selectedItems.item(x).Class = OlObjectClass.olMail Then
+            Set objItem = selectedItems.item(x)
+            objItem.UnRead = True
+            objItem.Save
+            objItem.Move objNameSpace.GetDefaultFolder(olFolderInbox).Folders("Wednesday Follow Up")
+        End If
+    Next
+    
+    GoTo EndSub
+
+HandleError:
+
+    If Err.Number = -2147352567 Then
+        Resume Next
+    End If
+        
+    Close #1
+    Open "C:\OutlookMacroLogs\EmailMoveError.log" For Append As #1
+    Print #1, ""
+    Print #1, "************************************************************"
+    Print #1, "*****   Error moving message to Next Wednesday Follow Up  *****"
+    Print #1, "************************************************************"
+    Print #1, "  Timestamp: " & Format(Now(), "m/d/yy h:m:s AMPM")
+    Print #1, "  Error - Number: " & Err.Number
+    Print #1, "  Error - Description: " & Err.Description
+    Print #1, "  Error - Help Context: " & Err.HelpContext
+    Print #1, "  Error - Help File: " & Err.HelpFile
+    Print #1, "  Error - Last DLL Error: " & Err.LastDllError
+    Print #1, "  Error - Source: " & Err.Source
+    Print #1, ""
+    Print #1, "  Subject: " & objItem.Subject
+    Print #1, "  From: " & objItem.SenderEmailAddress
+    Print #1, "  To: " & objItem.To
+    Print #1, "  CC: " & objItem.CC
+    Print #1, "  BCC: " & objItem.BCC
+    Print #1, "  Received: " & objItem.ReceivedTime
+    Print #1, "************************************************************"
+    Print #1, ""
+    Close #1
+    
+    Resume Next
+
+EndSub:
+        
+End Sub
+Sub NextThursday()
+    
+    On Error GoTo HandleError
+
+    '
+    ' Move selected emails to reference folder
+    '
+    Dim objNameSpace As Outlook.nameSpace
+    Dim objItem As Outlook.mailItem
+    Dim completed As Boolean
+    Dim selectedItems As Selection
+    Dim x As Long
+        
+    Set objNameSpace = Application.GetNamespace("MAPI")
+    Set selectedItems = Application.ActiveExplorer.Selection
+    
+    MoveSentMessagesToInbox
+    
+    If selectedItems.Count < 1 Then
+        MsgBox "No item selected"
+        GoTo EndSub
+    End If
+        
+    For x = 1 To selectedItems.Count
+        If selectedItems.item(x).Class = OlObjectClass.olMail Then
+            Set objItem = selectedItems.item(x)
+            objItem.UnRead = True
+            objItem.Save
+            objItem.Move objNameSpace.GetDefaultFolder(olFolderInbox).Folders("Thursday Follow Up")
+        End If
+    Next
+    
+    GoTo EndSub
+
+HandleError:
+
+    If Err.Number = -2147352567 Then
+        Resume Next
+    End If
+        
+    Close #1
+    Open "C:\OutlookMacroLogs\EmailMoveError.log" For Append As #1
+    Print #1, ""
+    Print #1, "************************************************************"
+    Print #1, "***** Error moving message to Next Thursday Follow Up  *****"
+    Print #1, "************************************************************"
+    Print #1, "  Timestamp: " & Format(Now(), "m/d/yy h:m:s AMPM")
+    Print #1, "  Error - Number: " & Err.Number
+    Print #1, "  Error - Description: " & Err.Description
+    Print #1, "  Error - Help Context: " & Err.HelpContext
+    Print #1, "  Error - Help File: " & Err.HelpFile
+    Print #1, "  Error - Last DLL Error: " & Err.LastDllError
+    Print #1, "  Error - Source: " & Err.Source
+    Print #1, ""
+    Print #1, "  Subject: " & objItem.Subject
+    Print #1, "  From: " & objItem.SenderEmailAddress
+    Print #1, "  To: " & objItem.To
+    Print #1, "  CC: " & objItem.CC
+    Print #1, "  BCC: " & objItem.BCC
+    Print #1, "  Received: " & objItem.ReceivedTime
+    Print #1, "************************************************************"
+    Print #1, ""
+    Close #1
+    
+    Resume Next
+
+EndSub:
+        
+End Sub
+Sub NextFriday()
+
+    On Error GoTo HandleError
+
+    '
+    ' Move selected emails to reference folder
+    '
+    Dim objNameSpace As Outlook.nameSpace
+    Dim objItem As Outlook.mailItem
+    Dim completed As Boolean
+    Dim selectedItems As Selection
+    Dim x As Long
+        
+    Set objNameSpace = Application.GetNamespace("MAPI")
+    Set selectedItems = Application.ActiveExplorer.Selection
+    
+    MoveSentMessagesToInbox
+    
+    If selectedItems.Count < 1 Then
+        MsgBox "No item selected"
+        GoTo EndSub
+    End If
+        
+    For x = 1 To selectedItems.Count
+        If selectedItems.item(x).Class = OlObjectClass.olMail Then
+            Set objItem = selectedItems.item(x)
+            objItem.UnRead = True
+            objItem.Save
+            objItem.Move objNameSpace.GetDefaultFolder(olFolderInbox).Folders("Friday Follow Up")
+        End If
+    Next
+    
+    GoTo EndSub
+
+HandleError:
+
+    If Err.Number = -2147352567 Then
+        Resume Next
+    End If
+        
+    Close #1
+    Open "C:\OutlookMacroLogs\EmailMoveError.log" For Append As #1
+    Print #1, ""
+    Print #1, "************************************************************"
+    Print #1, "***** Error moving message to Next Friday Follow Up  *****"
+    Print #1, "************************************************************"
+    Print #1, "  Timestamp: " & Format(Now(), "m/d/yy h:m:s AMPM")
+    Print #1, "  Error - Number: " & Err.Number
+    Print #1, "  Error - Description: " & Err.Description
+    Print #1, "  Error - Help Context: " & Err.HelpContext
+    Print #1, "  Error - Help File: " & Err.HelpFile
+    Print #1, "  Error - Last DLL Error: " & Err.LastDllError
+    Print #1, "  Error - Source: " & Err.Source
+    Print #1, ""
+    Print #1, "  Subject: " & objItem.Subject
+    Print #1, "  From: " & objItem.SenderEmailAddress
+    Print #1, "  To: " & objItem.To
+    Print #1, "  CC: " & objItem.CC
+    Print #1, "  BCC: " & objItem.BCC
+    Print #1, "  Received: " & objItem.ReceivedTime
+    Print #1, "************************************************************"
+    Print #1, ""
+    Close #1
+    
+    Resume Next
+
+EndSub:
+        
+End Sub
+Sub Today()
+    
+    On Error GoTo HandleError
+
+    '
+    ' Move selected emails to reference folder
+    '
+    Dim objNameSpace As Outlook.nameSpace
+    Dim objItem As Outlook.mailItem
+    Dim completed As Boolean
+    Dim selectedItems As Selection
+    Dim x As Long
+        
+    Set objNameSpace = Application.GetNamespace("MAPI")
+    Set selectedItems = Application.ActiveExplorer.Selection
+    
+    MoveSentMessagesToInbox
+    
+    If selectedItems.Count < 1 Then
+        MsgBox "No item selected"
+        GoTo EndSub
+    End If
+        
+    For x = 1 To selectedItems.Count
+        If selectedItems.item(x).Class = OlObjectClass.olMail Then
+            Set objItem = selectedItems.item(x)
+            objItem.UnRead = True
+            objItem.Save
+            objItem.Move objNameSpace.GetDefaultFolder(olFolderInbox).Folders("Today")
+        End If
+    Next
+    
+    GoTo EndSub
+
+HandleError:
+
+    If Err.Number = -2147352567 Then
+        Resume Next
+    End If
+        
+    Close #1
+    Open "C:\OutlookMacroLogs\EmailMoveError.log" For Append As #1
+    Print #1, ""
+    Print #1, "************************************************************"
+    Print #1, "*****        Error moving message to Today        *****"
+    Print #1, "************************************************************"
+    Print #1, "  Timestamp: " & Format(Now(), "m/d/yy h:m:s AMPM")
+    Print #1, "  Error - Number: " & Err.Number
+    Print #1, "  Error - Description: " & Err.Description
+    Print #1, "  Error - Help Context: " & Err.HelpContext
+    Print #1, "  Error - Help File: " & Err.HelpFile
+    Print #1, "  Error - Last DLL Error: " & Err.LastDllError
+    Print #1, "  Error - Source: " & Err.Source
+    Print #1, ""
+    Print #1, "  Subject: " & objItem.Subject
+    Print #1, "  From: " & objItem.SenderEmailAddress
+    Print #1, "  To: " & objItem.To
+    Print #1, "  CC: " & objItem.CC
+    Print #1, "  BCC: " & objItem.BCC
+    Print #1, "  Received: " & objItem.ReceivedTime
+    Print #1, "************************************************************"
+    Print #1, ""
+    Close #1
+    
+    Resume Next
+
+EndSub:
+
+End Sub
+Sub NextWeek()
+    
+    On Error GoTo HandleError
+
+    '
+    ' Move selected emails to reference folder
+    '
+    Dim objNameSpace As Outlook.nameSpace
+    Dim objItem As Outlook.mailItem
+    Dim completed As Boolean
+    Dim selectedItems As Selection
+    Dim x As Long
+        
+    Set objNameSpace = Application.GetNamespace("MAPI")
+    Set selectedItems = Application.ActiveExplorer.Selection
+    
+    MoveSentMessagesToInbox
+    
+    If selectedItems.Count < 1 Then
+        MsgBox "No item selected"
+        GoTo EndSub
+    End If
+        
+    For x = 1 To selectedItems.Count
+        If selectedItems.item(x).Class = OlObjectClass.olMail Then
+            Set objItem = selectedItems.item(x)
+            objItem.UnRead = True
+            objItem.Save
+            objItem.Move objNameSpace.GetDefaultFolder(olFolderInbox).Folders("Next Week")
+        End If
+    Next
+    
+    GoTo EndSub
+
+HandleError:
+
+    If Err.Number = -2147352567 Then
+        Resume Next
+    End If
+        
+    Close #1
+    Open "C:\OutlookMacroLogs\EmailMoveError.log" For Append As #1
+    Print #1, ""
+    Print #1, "************************************************************"
+    Print #1, "*****        Error moving message to Next Week        *****"
+    Print #1, "************************************************************"
+    Print #1, "  Timestamp: " & Format(Now(), "m/d/yy h:m:s AMPM")
+    Print #1, "  Error - Number: " & Err.Number
+    Print #1, "  Error - Description: " & Err.Description
+    Print #1, "  Error - Help Context: " & Err.HelpContext
+    Print #1, "  Error - Help File: " & Err.HelpFile
+    Print #1, "  Error - Last DLL Error: " & Err.LastDllError
+    Print #1, "  Error - Source: " & Err.Source
+    Print #1, ""
+    Print #1, "  Subject: " & objItem.Subject
+    Print #1, "  From: " & objItem.SenderEmailAddress
+    Print #1, "  To: " & objItem.To
+    Print #1, "  CC: " & objItem.CC
+    Print #1, "  BCC: " & objItem.BCC
+    Print #1, "  Received: " & objItem.ReceivedTime
+    Print #1, "************************************************************"
+    Print #1, ""
+    Close #1
+    
+    Resume Next
+
+EndSub:
+        
+End Sub
+Sub ThisMonth()
+    
+    On Error GoTo HandleError
+
+    '
+    ' Move selected emails to reference folder
+    '
+    Dim objNameSpace As Outlook.nameSpace
+    Dim objItem As Outlook.mailItem
+    Dim completed As Boolean
+    Dim selectedItems As Selection
+    Dim x As Long
+        
+    Set objNameSpace = Application.GetNamespace("MAPI")
+    Set selectedItems = Application.ActiveExplorer.Selection
+    
+    MoveSentMessagesToInbox
+    
+    If selectedItems.Count < 1 Then
+        MsgBox "No item selected"
+        GoTo EndSub
+    End If
+        
+    For x = 1 To selectedItems.Count
+        If selectedItems.item(x).Class = OlObjectClass.olMail Then
+            Set objItem = selectedItems.item(x)
+            objItem.UnRead = True
+            objItem.Save
+            objItem.Move objNameSpace.GetDefaultFolder(olFolderInbox).Folders("This Month")
+        End If
+    Next
+
+    GoTo EndSub
+
+HandleError:
+
+    If Err.Number = -2147352567 Then
+        Resume Next
+    End If
+        
+    Close #1
+    Open "C:\OutlookMacroLogs\EmailMoveError.log" For Append As #1
+    Print #1, ""
+    Print #1, "************************************************************"
+    Print #1, "*****        Error moving message to Today        *****"
+    Print #1, "************************************************************"
+    Print #1, "  Timestamp: " & Format(Now(), "m/d/yy h:m:s AMPM")
+    Print #1, "  Error - Number: " & Err.Number
+    Print #1, "  Error - Description: " & Err.Description
+    Print #1, "  Error - Help Context: " & Err.HelpContext
+    Print #1, "  Error - Help File: " & Err.HelpFile
+    Print #1, "  Error - Last DLL Error: " & Err.LastDllError
+    Print #1, "  Error - Source: " & Err.Source
+    Print #1, ""
+    Print #1, "  Subject: " & objItem.Subject
+    Print #1, "  From: " & objItem.SenderEmailAddress
+    Print #1, "  To: " & objItem.To
+    Print #1, "  CC: " & objItem.CC
+    Print #1, "  BCC: " & objItem.BCC
+    Print #1, "  Received: " & objItem.ReceivedTime
+    Print #1, "************************************************************"
+    Print #1, ""
+    Close #1
+    
+    Resume Next
+
+EndSub:
+
+End Sub
+Sub LogEmailDetails()
+    
+    Dim objNameSpace As Outlook.nameSpace
+    Dim objItem As Outlook.mailItem
+    Dim completed As Boolean
+    Dim selectedItems As Selection
+    Dim x As Long
+        
+    Set objNameSpace = Application.GetNamespace("MAPI")
+    Set selectedItems = Application.ActiveExplorer.Selection
+    
+    If selectedItems.Count < 1 Then
+        MsgBox "No item selected"
+        GoTo EndSub
+    End If
+        
+    For x = 1 To selectedItems.Count
+        If selectedItems.item(x).Class = OlObjectClass.olMail Then
+            Set objItem = selectedItems.item(x)
+'            Call LogMessage(objItem, "")
+            
+            Close #3
+            Open "C:\OutlookMacroLogs\LogEmailDetails.log" For Append As #3
+                Print #3, ""
+                Print #3, "************************************************************"
+                Print #3, "*****                   Email Details                  *****"
+                Print #3, "************************************************************"
+                Print #3, "   To: " & objItem.To
+                Print #3, "   From (Sender Email): " & objItem.SenderEmailAddress
+                Print #3, "   From (Displayed Name): " & objItem.Sender
+                Print #3, "   Sent On Behalf Of: " & objItem.SentOnBehalfOfName
+                Print #3, "   To: " & objItem.To
+                Print #3, "   CC: " & objItem.CC
+                Print #3, "   BCC: " & objItem.BCC
+                Print #3, "   Subject: " & objItem.Subject
+                Print #3, "   Conversation: " & objItem.ConversationTopic
+                Print #3, "   Received: " & objItem.ReceivedTime
+'                Print #3, "   Message: " & objItem.Body
+                Print #3, ""
+                Print #3, "************************************************************"
+            Close #3
+        Else
+            Close #3
+            Open "C:\OutlookMacroLogs\LogEmailDetails.log" For Append As #3
+                Print #3, ""
+                Print #3, "************************************************************"
+                Print #3, "*****     Selected item is not a olMail class type     *****"
+                Print #3, "************************************************************"
+                Print #3, ""
+                Print #3, "Class Type: ", selectedItems.item(x).Class
+                Print #3, ""
+                Print #3, "Numberical Value   Member name       Description"
+                Print #3, OlObjectClass.olApplication, "   Represents an Application object."
+                Print #3, OlObjectClass.olNamespace, "   Represents a NameSpace object."
+                Print #3, OlObjectClass.olFolder, "   Represents a Folder object."
+                Print #3, OlObjectClass.olRecipient, "   Represents a Recipient object."
+Print #3, OlObjectClass.olAttachments, "   Represents an Attachments object."
+Print #3, OlObjectClass.olAddressLists, "   Represents an AddressLists object."
+Print #3, OlObjectClass.olAddressEntries, "   Represents an AddressEntries object."
+Print #3, OlObjectClass.olAppointment, "   Represents an AppointmentItem object."
+Print #3, OlObjectClass.olMeetingRequest, "   Represents a MeetingItem object that is a meeting request."
+Print #3, OlObjectClass.olMeetingCancellation, "   Represents a MeetingItem object that is a meeting cancellation notice."
+Print #3, OlObjectClass.olMeetingResponseNegative, "   Represents a MeetingItem object that is a refusal of a meeting request."
+Print #3, OlObjectClass.olMeetingResponsePositive, "   Represents a MeetingItem object that is an acceptance of a meeting request."
+Print #3, OlObjectClass.olMeetingResponseTentative, "   Represents a MeetingItem object that is a tentative acceptance of a meeting request."
+Print #3, OlObjectClass.olRecurrencePattern, "   Represents a RecurrencePattern object."
+Print #3, OlObjectClass.olExceptions, "   Represents an Exceptions object."
+Print #3, OlObjectClass.olException, "   Represents an Exception object."
+Print #3, OlObjectClass.olAction, "   Represents an Action object."
+Print #3, OlObjectClass.olActions, "   Represents an Actions object."
+Print #3, OlObjectClass.olExplorer, "   Represents an Explorer object."
+Print #3, OlObjectClass.olInspector, "   Represents an Inspector object."
+Print #3, OlObjectClass.olPages, "   Represents a Pages object."
+Print #3, OlObjectClass.olFormDescription, "   Represents a FormDescription object."
+Print #3, OlObjectClass.olUserProperties, "   Represents a UserProperties object."
+Print #3, OlObjectClass.olUserProperty, "   Represents a UserProperty object."
+Print #3, OlObjectClass.olContact, "   Represents a ContactItem object."
+Print #3, OlObjectClass.olDocument, "   Represents a DocumentItem object."
+Print #3, OlObjectClass.olJournal, "   Represents a JournalItem object."
+Print #3, OlObjectClass.olMail, "   Represents a MailItem object."
+Print #3, OlObjectClass.olNote, "   Represents a NoteItem object."
+Print #3, OlObjectClass.olPost, "   Represents a PostItem object."
+Print #3, OlObjectClass.olReport, "   Represents a ReportItem object."
+Print #3, OlObjectClass.olRemote, "   Represents a RemoteItem object."
+Print #3, OlObjectClass.olTask, "   Represents a TaskItem object."
+Print #3, OlObjectClass.olTaskRequest, "   Represents a TaskRequestItem object."
+Print #3, OlObjectClass.olTaskRequestUpdate, "   Represents a TaskRequestUpdateItem object."
+Print #3, OlObjectClass.olTaskRequestAccept, "   Represents a TaskRequestAcceptItem object."
+Print #3, OlObjectClass.olTaskRequestDecline, "   Represents a TaskRequestDeclineItem object."
+Print #3, OlObjectClass.olExplorers, "   Represents an Explorers object."
+Print #3, OlObjectClass.olInspectors, "   Represents an Inspectors object."
+Print #3, OlObjectClass.olPanes, "   Represents a Panes object."
+Print #3, OlObjectClass.olOutlookBarPane, "   Represents an OutlookBarPane object."
+Print #3, OlObjectClass.olOutlookBarStorage, "   Represents an OutlookBarStorage object."
+Print #3, OlObjectClass.olOutlookBarGroups, "   Represents an OutlookBarGroups object."
+Print #3, OlObjectClass.olOutlookBarGroup, "   Represents an OutlookBarGroup object."
+Print #3, OlObjectClass.olOutlookBarShortcuts, "   Represents an OutlookBarShortcuts object."
+Print #3, OlObjectClass.olOutlookBarShortcut, "   Represents an OutlookBarShortcut object."
+Print #3, OlObjectClass.olDistributionList, "   Represents a ExchangeDistributionList object."
+Print #3, OlObjectClass.olPropertyPageSite, "   Represents a PropertyPageSite object."
+Print #3, OlObjectClass.olPropertyPages, "   Represents a PropertyPages object."
+Print #3, OlObjectClass.olSyncObject, "   Represents a SyncObject object."
+Print #3, OlObjectClass.olSyncObjects, "   Represents a SyncObject object."
+Print #3, OlObjectClass.olSelection, "   Represents a Selection object."
+Print #3, OlObjectClass.olLink, "   This object, member, or enumeration is deprecated and is not intended to be used in your code."
+Print #3, OlObjectClass.olLinks, "   This object, member, or enumeration is deprecated and is not intended to be used in your code."
+Print #3, OlObjectClass.olSearch, "   Represents a Search object."
+Print #3, OlObjectClass.olResults, "   Represents a Results object."
+Print #3, OlObjectClass.olViews, "   Represents a Views object."
+Print #3, OlObjectClass.olView, "   Represents a View object."
+Print #3, OlObjectClass.olItemProperties, "   Represents an ItemProperties object."
+Print #3, OlObjectClass.olItemProperty, "   Represents an ItemProperty object."
+Print #3, OlObjectClass.olReminders, "   Represents a Reminders object."
+Print #3, OlObjectClass.olReminder, "   Represents a Reminder object."
+Print #3, OlObjectClass.olConflict, "   Represents a Conflict object."
+Print #3, OlObjectClass.olConflicts, "   Represents a Conflicts object."
+Print #3, OlObjectClass.olSharing, "   Represents a SharingItem object."
+Print #3, OlObjectClass.olAccount, "   Represents an Account object."
+Print #3, OlObjectClass.olAccounts, "   Represents an Accounts object."
+Print #3, OlObjectClass.olStore, "   Represents a Store object."
+Print #3, OlObjectClass.olStores, "   Represents a Stores object."
+Print #3, OlObjectClass.olSelectNamesDialog, "   Represents a SelectNamesDialog object."
+Print #3, OlObjectClass.olExchangeUser, "   Represents an ExchangeUser object."
+Print #3, OlObjectClass.olExchangeDistributionList, "   Represents an ExchangeDistributionList object."
+Print #3, OlObjectClass.olPropertyAccessor, "   Represents a PropertyAccessor object."
+Print #3, OlObjectClass.olStorageItem, "   Represents a StorageItem object."
+Print #3, OlObjectClass.olRules, "   Represents a Rules object."
+Print #3, OlObjectClass.olRule, "   Represents a Rule object."
+Print #3, OlObjectClass.olRuleActions, "   Represents a RuleAction object."
+Print #3, OlObjectClass.olRuleAction, "   Represents a RuleAction object."
+Print #3, OlObjectClass.olMoveOrCopyRuleAction, "   Represents a MoveOrCopyRuleAction object."
+Print #3, OlObjectClass.olSendRuleAction, "   Represents a SendRuleAction object."
+Print #3, OlObjectClass.olTable, "   Represents a Table object."
+Print #3, OlObjectClass.olRow, "   Represents a Row object."
+Print #3, OlObjectClass.olAssignToCategoryRuleAction, "   Represents an AssignToCategoryRuleAction object."
+Print #3, OlObjectClass.olPlaySoundRuleAction, "   Represents a PlaySoundRuleAction object."
+Print #3, OlObjectClass.olMarkAsTaskRuleAction, "   Represents a MarkAsTaskRuleAction object."
+Print #3, OlObjectClass.olNewItemAlertRuleAction, "   Represents a NewItemAlertRuleAction object."
+Print #3, OlObjectClass.olRuleConditions, "   Represents a RuleConditions object."
+Print #3, OlObjectClass.olRuleCondition, "   Represents a RuleCondition object."
+Print #3, OlObjectClass.olImportanceRuleCondition, "   Represents an ImportanceRuleCondition object."
+Print #3, OlObjectClass.olFormRegion, "   Represents a FormRegion object."
+Print #3, OlObjectClass.olCategoryRuleCondition, "   Represents a CategoryRuleCondition object."
+Print #3, OlObjectClass.olFormNameRuleCondition, "   Represents a FormNameRuleCondition object."
+Print #3, OlObjectClass.olFromRuleCondition, "   Represents a ToOrFromRuleCondition object."
+Print #3, OlObjectClass.olSenderInAddressListRuleCondition, "   Represents a SenderInAddressListRuleCondition object."
+Print #3, OlObjectClass.olTextRuleCondition, "   Represents a TextRuleCondition object."
+Print #3, OlObjectClass.olAccountRuleCondition, "   Represents an AccountRuleCondition object."
+Print #3, OlObjectClass.olClassTableView, "   Represents a TableView object."
+Print #3, OlObjectClass.olClassIconView, "   Represents a IconView object."
+Print #3, OlObjectClass.olClassCardView, "   Represents a CardView object."
+Print #3, OlObjectClass.olClassCalendarView, "   Represents a CalendarView object."
+Print #3, OlObjectClass.olClassTimeLineView, "   Represents a TimelineView object."
+Print #3, OlObjectClass.olViewFields, "   Represents a ViewFields object."
+Print #3, OlObjectClass.olViewField, "   Represents a ViewField object."
+Print #3, OlObjectClass.olOrderField, "   Represents an OrderField object."
+Print #3, OlObjectClass.olOrderFields, "   Represents an OrderFields object."
+Print #3, OlObjectClass.olViewFont, "   Represents a ViewFont object."
+Print #3, OlObjectClass.olAutoFormatRule, "   Represents an AutoFormatRule object."
+Print #3, OlObjectClass.olAutoFormatRules, "   Represents an AutoFormatRules object."
+Print #3, OlObjectClass.olColumnFormat, "   Represents a ColumnFormat object."
+Print #3, OlObjectClass.olColumns, "   Represents a Columns object."
+Print #3, OlObjectClass.olCalendarSharing, "   Represents a CalendarSharing object."
+Print #3, OlObjectClass.olCategory, "   Represents a Category object."
+Print #3, OlObjectClass.olCategories, "   Represents a Categories object."
+Print #3, OlObjectClass.olColumn, "   Represents a Column object."
+Print #3, OlObjectClass.olClassNavigationPane, "   Represents a NavigationPane object."
+Print #3, OlObjectClass.olNavigationModules, "   Represents a NavigationModules object."
+Print #3, OlObjectClass.olNavigationModule, "   Represents a NavigationModule object."
+Print #3, OlObjectClass.olMailModule, "   Represents a MailModule object."
+Print #3, OlObjectClass.olCalendarModule, "   Represents a CalendarModule object."
+Print #3, OlObjectClass.olContactsModule, "   Represents a ContactsModule object."
+Print #3, OlObjectClass.olTasksModule, "   Represents a TasksModule object."
+Print #3, OlObjectClass.olJournalModule, "   Represents a JournalModule object."
+Print #3, OlObjectClass.olNotesModule, "   Represents a NotesModule object."
+Print #3, OlObjectClass.olNavigationGroups, "   Represents a NavigationGroups object."
+Print #3, OlObjectClass.olNavigationGroup, "   Represents a NavigationGroup object."
+Print #3, OlObjectClass.olNavigationFolders, "   Represents a NavigationFolders object."
+Print #3, OlObjectClass.olNavigationFolder, "   Represents a NavigationFolder object."
+Print #3, OlObjectClass.olClassBusinessCardView, "   Represents a BusinessCardView object."
+Print #3, OlObjectClass.olAttachmentSelection, "   Represents an AttachmentSelection object."
+Print #3, OlObjectClass.olAddressRuleCondition, "   Represents an AddressRuleCondition object."
+Print #3, OlObjectClass.olUserDefinedProperty, "   Represents a UserDefinedProperty object."
+Print #3, OlObjectClass.olUserDefinedProperties, "   Represents a UserDefinedProperties object."
+Print #3, OlObjectClass.olFromRssFeedRuleCondition, "   Represents a FromRssFeedRuleCondition object."
+Print #3, OlObjectClass.olClassTimeZone, "   Represents a TimeZone object."
+Print #3, OlObjectClass.olClassTimeZones, "   Represents a TimeZones object."
+Print #3, OlObjectClass.olMobile, "   This object, member, or enumeration is deprecated and is not intended to be used in your code."
+Print #3, OlObjectClass.olSolutionsModule, "   Represents a SolutionsModule object."
+Print #3, OlObjectClass.olConversation, "   Represents a Conversation object."
+Print #3, OlObjectClass.olSimpleItems, "   Represents a SimpleItems object."
+Print #3, OlObjectClass.olOutspace, "   Represents an AccountSelector object."
+Print #3, OlObjectClass.olMeetingForwardNotification, "   Represents a MeetingItem object that is a notice about forwarding the meeting request."
+Print #3, OlObjectClass.olConversationHeader, "   Represents a ConversationHeader object."
+Print #3, OlObjectClass.olClassPeopleView, "   Represents a PeopleView object."
+                Print #3, "************************************************************"
+                Print #3, ""
+            Close #3
+        
+        End If
+    Next
+EndSub:
+    
+End Sub
+Sub LogMessage(objItem As Outlook.mailItem, message As String, logFile As String)
+
+    Dim folder As Outlook.MAPIFolder
+    Dim folderPath As String
+    
+'    Set folder = Application.ActiveExplorer.Selection.item(1).Parent
+
+'  This is causing error in Outlook 2013 - commenting out until a work around is coded
+''    Set folder = objItem.Parent
+''    folderPath = folder.Name
+ 
+''    Do Until folder.Parent = "Mapi"
+''        Set folder = folder.Parent
+''        folderPath = folder.Name & "\" & folderPath
+''    Loop
+    
+    Close #3
+    Open logFile For Append As #3
+        Print #3, ""
+        Print #3, "************************************************************"
+        Print #3, "*****                   Email Details                  *****"
+        Print #3, "************************************************************"
+        Print #3, "   Date/Time: " & Format(Now(), "m/d/yy h:m:s AMPM")
+        Print #3, ""
+        Print #3, "   From (Sender Email): " & objItem.SenderEmailAddress
+        Print #3, "   From (Displayed Name): " & objItem.Sender
+        Print #3, "   To: " & objItem.To
+        Print #3, "   CC: " & objItem.CC
+        Print #3, "   BCC: " & objItem.BCC
+        Print #3, "   Subject: " & objItem.Subject
+        Print #3, "   Conversation: " & objItem.ConversationTopic
+        Print #3, "   Received: " & objItem.ReceivedTime
+'        Print #3, "   Message: " & objItem.Body
+''        Print #3, "   "
+''        Print #3, "   Containing Folder: " & folderPath
+        Print #3, ""
+        
+        If Strings.Len(message) > 0 Then
+            Print #3, "Detailed Message:"
+            Print #3, "   " & message
+            Print #3, ""
+        End If
+
+        Print #3, "************************************************************"
+    Close #3
+End Sub
+Sub LogMessage2(message As String, logFile As String)
+
+    Close #3
+    Open logFile For Append As #3
+        Print #3, ""
+        If Strings.Len(message) > 0 Then
+            Print #3, "   " & message
+            Print #3, ""
+        End If
+    Close #3
+End Sub
+Sub MoveSentMessagesToInbox()
+    
+    On Error GoTo HandleError
+    
+    Dim objOutlook As Outlook.Application
+    Dim objNameSpace As Outlook.nameSpace
+    Dim objSourceFolder As Outlook.MAPIFolder
+    Dim objVarientMailItem As Variant
+    Dim intCountMailItems As Integer
+    Dim objMailItem As mailItem
+    
+    Set objOutlook = Application
+    Set objNameSpace = objOutlook.GetNamespace("MAPI")
+    Set objSourceFolder = objNameSpace.GetDefaultFolder(olFolderSentMail)
+    
+    ' loop through items in sent folder
+    '
+    ' IMPORTANT: this should be done in reverse order, otherwise you have to re-run the macro
+    For intCountMailItems = objSourceFolder.Items.Count To 1 Step -1
+    
+        Set objVarientMailItem = objSourceFolder.Items.item(intCountMailItems)
+        
+        If (TypeOf objVarientMailItem Is Outlook.mailItem) Then
+            Dim mailItem As Outlook.mailItem
+            Set mailItem = objVarientMailItem
+            
+            ' Don't move, just delete emails sent to abuse@messaging.microsoft.com
+            If Strings.InStr(mailItem.To, "abuse@messaging.microsoft.com") > 0 Then
+                mailItem.Move objNameSpace.GetDefaultFolder(olFolderDeletedItems)
+            Else
+                mailItem.Move objNameSpace.GetDefaultFolder(olFolderInbox)
+            End If
+         
+        ElseIf (TypeOf objVarientMailItem Is Outlook.ContactItem) Then
+            objVarientMailItem.Delete
+        ElseIf (TypeOf objVarientMailItem Is Outlook.AppointmentItem) Then
+            objVarientMailItem.Delete
+        ElseIf (TypeOf objVarientMailItem Is Outlook.TaskItem) Then
+            objVarientMailItem.Delete
+        ElseIf (TypeOf objVarientMailItem Is Outlook.MeetingItem) Then
+            objVarientMailItem.Delete
+        End If
+        
+    Next intCountMailItems
+    
+    Exit Sub
+    
+HandleError:
+    Close #1
+    Open "C:\OutlookMacroLogs\EmailMoveError.log" For Append As #1
+    Print #1, ""
+    Print #1, "************************************************************"
+    Print #1, "*****        Error moving Sent message to Inbox        *****"
+    Print #1, "************************************************************"
+    Print #1, "  Timestamp: " & Format(Now(), "m/d/yy h:m:s AMPM")
+    Print #1, "  Error - Number: " & Err.Number
+    Print #1, "  Error - Description: " & Err.Description
+    Print #1, "  Error - Help Context: " & Err.HelpContext
+    Print #1, "  Error - Help File: " & Err.HelpFile
+    Print #1, "  Error - Last DLL Error: " & Err.LastDllError
+    Print #1, "  Error - Source: " & Err.Source
+    Print #1, ""
+    Print #1, "  Subject: " & objVarientMailItem.Subject
+    Print #1, "  From: " & objVarientMailItem.SenderEmailAddress
+    Print #1, "  To: " & objVarientMailItem.To
+    Print #1, "  CC: " & objVarientMailItem.CC
+    Print #1, "  BCC: " & objVarientMailItem.BCC
+    Print #1, "  Received: " & objVarientMailItem.ReceivedTime
+    'Print #1, "  Message: " & objVarientMailItem.Body
+    Print #1, "************************************************************"
+    Print #1, ""
+
+    Close #1
+    
+    Resume Next
+    
+End Sub
+
+Sub PrintFolderTree()
+    
+    Dim folder As Outlook.MAPIFolder
+    Dim folderPath As String
+    
+    'Set folder = Application.ActiveExplorer.Selection.item(1).Parent
+    'folderPath = folder.Name
+     
+    '
+    ' Build the folder path from the parent objects
+    '
+    'Do Until folder.Parent = "Mapi"
+    '    Set folder = folder.Parent
+    '    folderPath = folder.Name & "\" & folderPath
+    'Loop
+    
+    '
+    ' Display the path
+    '
+    'MsgBox ("Containing Folder: " & folderPath)
+    
+End Sub
+Sub MoveExternalEmails()
+    '
+    ' Outlook subroutine to move all external emails to a specific folder
+    '
+    ' Author: Darrell Gentry
+    '
+    On Error GoTo ErrorHandler
+    
+    Dim sourceFolder As Outlook.MAPIFolder
+    Dim varMailItem As Variant
+    Dim intCountMailItems As Integer
+    Dim countArray() As ConversationCount
+    Dim mailItemCount As Integer
+    Dim movedItems As Integer
+    Dim result As Boolean
+    Dim startTime As Single
+    Dim endTime As Single
+    Dim elapsed As Single
+    Dim objNameSpace As Outlook.nameSpace
+        
+    startTime = Timer
+    
+    Set objNameSpace = Application.GetNamespace("MAPI")
+    Set sourceFolder = Application.ActiveExplorer.CurrentFolder
+    mailItemCount = sourceFolder.Items.Count
+      
+    ReDim countArray(mailItemCount)
+    
+    movedItems = 0
+        
+    ' loop through items in the folder
+    '
+    ' IMPORTANT: You must loop through the list from MAX to 1.  If you step UP through the list, you have to re-run the
+    '            macro an inverse exponential number of times.
+    For intCountMailItems = mailItemCount To 1 Step -1
+        Set varMailItem = sourceFolder.Items.item(intCountMailItems)
+        
+        ' check for item type and process emails
+        If (TypeOf varMailItem Is Outlook.mailItem) Then
+            Dim mailItem As Outlook.mailItem
+            Set mailItem = varMailItem
+        
+            ' call external email check
+            result = moveIfExternal(mailItem)
+            
+            If result Then
+                movedItems = movedItems + 1
+            End If
+        End If
+        
+    Next intCountMailItems
+    
+    endTime = Timer
+    elapsed = Format(endTime - startTime, "Fixed")
+    MsgBox "Elapsed Time: " & elapsed & "     Moved " & movedItems & " messages"
+    
+    Exit Sub
+    
+ErrorHandler:
+
+End Sub
+Private Function moveIfExternal(mailItem As Outlook.mailItem) As Boolean
+    Dim objNameSpace As Outlook.nameSpace
+    
+    Set objNameSpace = Application.GetNamespace("MAPI")
+
+    ' check if sender if is internal or is approved external
+    ' St. Jude
+    If Strings.InStr(Strings.LCase(mailItem.SenderEmailAddress), "stjude.org") Or _
+        Strings.InStr(Strings.LCase(mailItem.SenderEmailAddress), "o=exchangelabs/ou=exchange") Then
+        moveIfExternal = False
+        Exit Function
+    End If
+    ' St. Jude Systems
+    If Strings.InStr(Strings.LCase(mailItem.SenderEmailAddress), "@agents.icims.com") Or _
+        Strings.InStr(Strings.LCase(mailItem.SenderEmailAddress), "messenger@webex.com") Or _
+        Strings.InStr(Strings.LCase(mailItem.SenderEmailAddress), "swnalert@sendwordnow.com") Or _
+        Strings.InStr(Strings.LCase(mailItem.SenderEmailAddress), "appreciate@appreciatehub.com") Or _
+        Strings.InStr(Strings.LCase(mailItem.SenderEmailAddress), "stjude+email+49gk-16d14b87f0@agents.icims.com") Then
+        moveIfExternal = False
+        Exit Function
+    End If
+    ' Google Analytics
+    If Strings.InStr(Strings.LCase(mailItem.SenderEmailAddress), "sjiddev@gmail.com") Then
+        moveIfExternal = False
+        Exit Function
+    End If
+    ' Vendors
+    If Strings.InStr(Strings.LCase(mailItem.SenderEmailAddress), "4thsource.com") Or _
+        Strings.InStr(Strings.LCase(mailItem.SenderEmailAddress), "timeandexpense@allegisgroup.com") Or _
+        Strings.InStr(Strings.LCase(mailItem.SenderEmailAddress), "billy.baker@staples.com") Or _
+        Strings.InStr(Strings.LCase(mailItem.SenderEmailAddress), "roberthalf.com") Or _
+        Strings.InStr(Strings.LCase(mailItem.SenderEmailAddress), "dnanexus.com") Or _
+        Strings.InStr(Strings.LCase(mailItem.SenderEmailAddress), "fortelinea.com") Or _
+        Strings.InStr(Strings.LCase(mailItem.SenderEmailAddress), "fei.com") Or _
+        Strings.InStr(Strings.LCase(mailItem.SenderEmailAddress), "microsoft.com") Or _
+        Strings.InStr(Strings.LCase(mailItem.SenderEmailAddress), "teksystems.com") Or _
+        Strings.InStr(Strings.LCase(mailItem.SenderEmailAddress), "apexsystems.com") Or _
+        Strings.InStr(Strings.LCase(mailItem.SenderEmailAddress), "gartner.com") Or _
+        Strings.InStr(Strings.LCase(mailItem.SenderEmailAddress), "nextech-solutions.com") Or _
+        Strings.InStr(Strings.LCase(mailItem.SenderEmailAddress), "perkinelmer@flexnetoperations.com") Or _
+        Strings.InStr(Strings.LCase(mailItem.SenderEmailAddress), "dnastar.com") Or _
+        Strings.InStr(Strings.LCase(mailItem.SenderEmailAddress), "finnpartners.com") Or _
+        Strings.InStr(Strings.LCase(mailItem.SenderEmailAddress), "type-coach.com") Or _
+        Strings.InStr(Strings.LCase(mailItem.SenderEmailAddress), "zycron.com") Then
+        moveIfExternal = False
+        Exit Function
+    End If
+    ' Library
+    If Strings.InStr(Strings.LCase(mailItem.SenderEmailAddress), "ntmcs.com") Then
+        moveIfExternal = False
+        Exit Function
+    End If
+    ' St. Jude Employees External Emails
+    If Strings.InStr(Strings.LCase(mailItem.SenderEmailAddress), "ebsuh@yahoo.com") Or _
+        Strings.InStr(Strings.LCase(mailItem.SenderEmailAddress), "dtgentry23@gmail.com") Or _
+        Strings.InStr(Strings.LCase(mailItem.SenderEmailAddress), "espy@espy.net") Or _
+        Strings.InStr(Strings.LCase(mailItem.SenderEmailAddress), "pibypaul@gmail.com") Or _
+        Strings.InStr(Strings.LCase(mailItem.SenderEmailAddress), "mhalic@gmail.com") Or _
+        Strings.InStr(Strings.LCase(mailItem.SenderEmailAddress), "liang.w.tang@gmail.com") Or _
+        Strings.InStr(Strings.LCase(mailItem.SenderEmailAddress), "scott.blanchard@gmail.com") Or _
+        Strings.InStr(Strings.LCase(mailItem.SenderEmailAddress), "bwmcmahan@gmail.com") Then
+        moveIfExternal = False
+        Exit Function
+    End If
+    ' Mausoleum
+    If Strings.InStr(Strings.LCase(mailItem.SenderEmailAddress), "hannse64@googlemail.com") Or _
+        Strings.InStr(Strings.LCase(mailItem.SenderEmailAddress), "post@hannse.de") Then
+        moveIfExternal = False
+        Exit Function
+    End If
+    ' hosted systems
+    If Strings.InStr(Strings.LCase(mailItem.SenderEmailAddress), "stjude@service-now.com") Or _
+        Strings.InStr(Strings.LCase(mailItem.SenderEmailAddress), "alerts@cloudyn.com") Then
+        moveIfExternal = False
+        Exit Function
+    End If
+    ' Newsletters
+    If Strings.InStr(Strings.LCase(mailItem.SenderEmailAddress), "noreply@a.email.hbr.org") Or _
+        Strings.InStr(Strings.LCase(mailItem.SenderEmailAddress), "marketing@bcbst-email.com") Then
+        moveIfExternal = False
+        Exit Function
+    End If
+    ' Other
+    If Strings.InStr(Strings.LCase(mailItem.SenderEmailAddress), "talent.icims.com") Or _
+        Strings.InStr(Strings.LCase(mailItem.SenderEmailAddress), "AAA") Then
+        moveIfExternal = False
+        Exit Function
+    End If
+    
+    ' Move if it gets to here
+    mailItem.Move objNameSpace.GetDefaultFolder(olFolderInbox).Folders("External Emails")
+    moveIfExternal = True
+    
+End Function
+Sub RunRulesOnCurrentFolder()
+    '
+    ' Outlook rule to run the ProcessMailRules on the current folder for all items
+    '
+    ' Author: Darrell Gentry
+    '
+    On Error GoTo ErrorHandler
+    
+    Dim sourceFolder As Outlook.MAPIFolder
+    Dim varMailItem As Variant
+    Dim movedItems As Integer
+    Dim intCountMailItems As Integer
+    Dim countArray() As ConversationCount
+    Dim intArrayCounter As Integer
+    Dim mailItemCount As Integer
+    Dim rulesResult As Boolean
+    Dim startTime As Single
+    Dim endTime As Single
+    Dim elapsed As Single
+    
+    startTime = Timer
+    
+'    Application.ActiveExplorer.CommandBars.ExecuteMso ("DisableAutoSendReceive")
+    
+    If MsgBox("Run Email Rules?", vbOKCancel) = vbCancel Then
+        Exit Sub
+    End If
+    
+    MoveSentMessagesToInbox
+    
+    Set sourceFolder = Application.ActiveExplorer.CurrentFolder
+    mailItemCount = sourceFolder.Items.Count
+      
+    ReDim countArray(mailItemCount)
+    
+    movedItems = 0
+    
+    ' loop through items in the folder
+    '
+    ' IMPORTANT: You must loop through the list from MAX to 1.  If you step UP through the list, you have to re-run the
+    '            macro an inverse exponential number of times.
+    For intCountMailItems = mailItemCount To 1 Step -1
+        Set varMailItem = sourceFolder.Items.item(intCountMailItems)
+        
+        ' check for item type and process emails
+        If (TypeOf varMailItem Is Outlook.mailItem) Then
+            Dim mailItem As Outlook.mailItem
+            Set mailItem = varMailItem
+        
+            ' run rules on message
+            rulesResult = ProcessMailRules(mailItem, Outlook.Application, Outlook.Application.GetNamespace("MAPI"), sourceFolder)
+            
+            If rulesResult Then
+                movedItems = movedItems + 1
+            End If
+            
+        End If
+        
+    Next intCountMailItems
+    
+    endTime = Timer
+    elapsed = Format(endTime - startTime, "Fixed")
+    
+    MsgBox "Elapsed Time: " & elapsed & "     Moved " & movedItems & " messages"
+    
+'    Application.ActiveExplorer.CommandBars.ExecuteMso ("DisableAutoSendReceive")
+    
+    Exit Sub
+    
+ErrorHandler:
+
+End Sub
+
+Sub RunDeleteRulesOnCurrentFolder()
+    '
+    ' Outlook rule to run the ProcessMailRules on the current folder for all items
+    '
+    ' Author: Darrell Gentry
+    '
+    On Error GoTo ErrorHandler
+    
+    Dim sourceFolder As Outlook.MAPIFolder
+    Dim varMailItem As Variant
+    Dim movedItems As Integer
+    Dim intCountMailItems As Integer
+    Dim countArray() As ConversationCount
+    Dim intArrayCounter As Integer
+    Dim mailItemCount As Integer
+    Dim rulesResult As Boolean
+    Dim startTime As Single
+    Dim endTime As Single
+    Dim elapsed As Single
+    
+    startTime = Timer
+    
+'    Application.ActiveExplorer.CommandBars.ExecuteMso ("DisableAutoSendReceive")
+    
+    If MsgBox("Run Delete Email Rules?", vbOKCancel) = vbCancel Then
+        Exit Sub
+    End If
+    
+    MoveSentMessagesToInbox
+    
+    Set sourceFolder = Application.ActiveExplorer.CurrentFolder
+    mailItemCount = sourceFolder.Items.Count
+      
+    ReDim countArray(mailItemCount)
+    
+    movedItems = 0
+    
+    ' loop through items in the folder
+    '
+    ' IMPORTANT: You must loop through the list from MAX to 1.  If you step UP through the list, you have to re-run the
+    '            macro an inverse exponential number of times.
+    For intCountMailItems = mailItemCount To 1 Step -1
+        Set varMailItem = sourceFolder.Items.item(intCountMailItems)
+        
+        ' check for item type and process emails
+        If (TypeOf varMailItem Is Outlook.mailItem) Then
+            Dim mailItem As Outlook.mailItem
+            Set mailItem = varMailItem
+        
+            ' run rules on message
+            rulesResult = ProcessDeleteMailRules(mailItem, Outlook.Application, Outlook.Application.GetNamespace("MAPI"), sourceFolder)
+            
+            If rulesResult Then
+                movedItems = movedItems + 1
+            End If
+            
+        End If
+        
+    Next intCountMailItems
+    
+    endTime = Timer
+    elapsed = Format(endTime - startTime, "Fixed")
+    
+    MsgBox "Elapsed Time: " & elapsed & "     Deleted " & movedItems & " messages"
+    
+'    Application.ActiveExplorer.CommandBars.ExecuteMso ("DisableAutoSendReceive")
+    
+    Exit Sub
+    
+ErrorHandler:
+
+End Sub
+Sub TotalMailItemsBySubject()
+    '
+    ' Loop through all mail items in the current folder and total the number of items by email subject
+    '
+    ' Author: Darrell Gentry
+    '
+    On Error GoTo ErrorHandler
+    
+    Dim sourceFolder As Outlook.MAPIFolder
+    Dim varMailItem As Variant
+    Dim lngMovedItems
+    Dim intCountMailItems As Integer
+    Dim messageSubjectLC As String
+    Dim countArray() As String
+    Dim intArrayCounter As Integer
+    Dim mailItemCount As Integer
+    Dim rulesResult As Boolean
+
+    
+'    Type ConversationCount
+'        ConversationSubject As String
+'        Count As Integer
+'    End Type
+
+    Set sourceFolder = Application.ActiveExplorer.CurrentFolder
+    mailItemCount = sourceFolder.Items.Count
+      
+    ReDim countArray(mailItemCount, 2) ' needs to be a 2-dimensional array
+    
+    
+    ' loop through items in the folder
+    '
+    ' IMPORTANT: You must loop through the list from MAX to 1.  If you step UP through the list, you have to re-run the
+    '            macro an inverse exponential number of times.
+    For intCountMailItems = sourceFolder.Items.Count To 1 Step -1
+        Set varMailItem = sourceFolder.Items.item(intCountMailItems)
+        
+        ' check for item type and process emails
+        If (TypeOf varMailItem Is Outlook.mailItem) Then
+            Dim mailItem As Outlook.mailItem
+            Set mailItem = varMailItem
+            
+            'check subject and add to count
+            messageSubjectLC = Strings.LCase(mailItem.ConversationTopic)
+
+            ' Loop through array to add item
+            For intArrayCounter = mailItemCount To 1 Step -1
+            
+            Next intArrayCounter
+        
+        End If
+        
+    Next intCountMailItems
+
+        
+'    Next intCountMailItems
+    
+    MsgBox "Moved " & lngMovedItems & " messages"
+    
+    Exit Sub
+    
+ErrorHandler:
+    
+End Sub
+
+Function ProcessMailRules(objMailItem As Outlook.mailItem, _
+                          objOutlook As Outlook.Application, _
+                          objNameSpace As Outlook.nameSpace, _
+                          objSourceFolder As Outlook.MAPIFolder) As Boolean
+
+    '
+    '  ************** FUTURE ENHANCEMENTS
+    '    create function to check if okay to delete (return boolean), pass in sender, subject, & boolean to see if I am in the to, cc, or bcc list
+    '
+    '    Need to change messageSender & messageSenderLC to messageSenderEmail & messageSenderEmailLC
+    '
+
+    'MsgBox "In ProcessMailRules Function"
+    
+    On Error GoTo HandleError
+    
+    Dim destinationFolder As Outlook.MAPIFolder
+    Dim isMoved As Boolean
+    Dim destinationFolderName As String
+    Dim messageSubjectLC As String
+    Dim messageSenderEmailLC As String
+    Dim messageSenderEmail As String
+    Dim messageRecipientsLC As String
+    Dim inToList As Boolean
+    Dim inCCList As Boolean
+    Dim inBCCList As Boolean
+    Dim logData As Boolean
+    Dim logError As Boolean
+    Dim fromMe As Boolean
+    Dim sentToMe As Boolean
+    Dim successful As Boolean
+    Dim errorAt As String
+        
+    ' **************************************************************************************
+    ' set to TRUE to write to log file
+    'logData = True
+    logData = False
+    'logError = False
+    logError = True
+    ' **************************************************************************************
+    
+    errorAt = "start of processing"
+    
+    If logData Then
+        Call LogMessage2("Start Message Processing: " & Format(Now(), "m/d/yy h:m:s AMPM"), "C:\OutlookMacroLogs\ProcessMailRules.log")
+    End If
+    
+    
+    ' Check for null paramters - item
+    errorAt = "Checking for null paramters - objMailItem"
+    If IsNull(objMailItem) Then
+        Call LogMessage2(Format(Now(), "m/d/yy h:m:s AMPM") & "    NULL Paramter in ProcessMailRules: objMailItem", "C:\OutlookMacroLogs\ProcessMailRules.log")
+        MsgBox ("Module1.ProcessMailRules - Paramter NULL: objMailItem")
+        GoTo StopProcessingRules
+    End If
+    
+    ' Check for null paramters - item
+    errorAt = "Checking for null paramters - objOutlook"
+    If IsNull(objOutlook) Then
+        Call LogMessage2(Format(Now(), "m/d/yy h:m:s AMPM") & "    NULL Paramter in ProcessMailRules: objOutlook (Outlook.Application)", "C:\OutlookMacroLogs\ProcessMailRules.log")
+        MsgBox ("Module1.ProcessMailRules - Paramter NULL: objOutlook (Outlook.Application)")
+        GoTo StopProcessingRules
+    End If
+    
+    ' Check for null paramters - item
+    errorAt = "Checking for null paramters - objNameSpace"
+    If IsNull(objNameSpace) Then
+        Call LogMessage2(Format(Now(), "m/d/yy h:m:s AMPM") & "    NULL Paramter in ProcessMailRules: objNameSpace (Outlook.NameSpace)", "C:\OutlookMacroLogs\ProcessMailRules.log")
+        MsgBox ("Module1.ProcessMailRules - Paramter NULL: objNameSpace (Outlook.NameSpace)")
+        GoTo StopProcessingRules
+    End If
+    
+    ' Check for null paramters - item
+    errorAt = "Checking for null paramters - objSourceFolder"
+    If IsNull(objSourceFolder) Then
+        Call LogMessage2(Format(Now(), "m/d/yy h:m:s AMPM") & "    NULL Paramter in ProcessMailRules: objSourceFolder (Outlook.MAPIFolder)", "C:\OutlookMacroLogs\ProcessMailRules.log")
+        MsgBox ("Module1.ProcessMailRules - Paramter NULL: objSourceFolder (Outlook.MAPIFolder)")
+        GoTo StopProcessingRules
+    End If
+
+       
+    ' Do NOT call DoEvents to allow the OS to continue with event processing
+    '   This is causing many issues with Outlook locking up during the macro execution
+    'DoEvents (leave commented out)
+    
+    If objMailItem.Class <> olMail Then
+        isMoved = False
+        GoTo StopProcessingRules
+    End If
+    
+    If logData Then
+            Call LogMessage(objMailItem, "Processing Email", "C:\OutlookMacroLogs\ProcessMailRules.log")
+            Call LogMessage2(objMailItem.Subject, "C:\OutlookMacroLogs\ProcessMailRules.log")
+    End If
+    
+    'initialize email variables
+    errorAt = "initialize email variables"
+    messageSubjectLC = Strings.LCase(objMailItem.Subject)
+    messageSenderEmailLC = Strings.LCase(objMailItem.SenderEmailAddress)
+    messageSenderEmail = objMailItem.SenderEmailAddress
+    messageRecipientsLC = Strings.LCase(objMailItem.To & "," & objMailItem.CC & "," & objMailItem.BCC)
+    
+    
+    ' initialize booleans to set flags
+    sentToMe = False
+    fromMe = False
+    inToList = False
+    inCCList = False
+    inBCCList = False
+      
+    
+    ' check for name in TO list
+    errorAt = "checking for name in To list"
+    If Strings.InStr(Strings.LCase(objMailItem.To), "gentry, d") Then
+        sentToMe = True
+        inToList = True
+    End If
+    
+    ' check for name in CC list
+    errorAt = "checking for name in CC list"
+    If Strings.InStr(Strings.LCase(objMailItem.CC), "gentry, d") Then
+        sentToMe = True
+        inCCList = True
+    End If
+
+    ' check for name in BCC list
+    errorAt = "checking for name in BCC list"
+    If Strings.InStr(Strings.LCase(objMailItem.BCC), "gentry, d") Then
+        sentToMe = True
+        inBCCList = True
+    End If
+    
+    ' check for my name in FROM
+    errorAt = "checking for name in From"
+    If Strings.InStr(Strings.LCase(objMailItem.SenderEmailAddress), "gentry, d") Then
+        fromMe = True
+    End If
+    
+    'MsgBox "Subject = " & objMailItem.Subject
+    'MsgBox "sentToMe = " & sentToMe
+    'MsgBox "Sender = " & objMailItem.SenderEmailAddress & "  fromMe = " & fromMe
+    
+    ' **********************************************************************************************************
+    '         Start of rules
+    ' **********************************************************************************************************
+
+    '
+    ' Delete emails
+    '
+    If ProcessDeleteMailRules(objMailItem, objOutlook, objNameSpace, objSourceFolder) Then
+        isMoved = True
+        GoTo StopProcessingRules
+    End If
+    
+    '
+    ' Move Pending Approvals for system account requests to Need Approval
+    '
+    errorAt = "Moving emails - Pending approvals"
+    If (Strings.InStr(messageSubjectLC, "timeoff request") Or _
+        Strings.InStr(messageSubjectLC, "ecab approval") Or _
+        Strings.InStr(messageSubjectLC, "timeoff - email confirmation") Or _
+        Strings.InStr(messageSubjectLC, "approval request") Or _
+        Strings.InStr(messageSubjectLC, Strings.LCase("Expense Report Requires Approval - Report")) Or _
+        Strings.InStr(messageSubjectLC, "ts and project status") Or _
+        Strings.InStr(messageSubjectLC, "new system account request (pending your approval)") Or _
+        Strings.InStr(messageSubjectLC, "from summerfield") Or _
+        Strings.InStr(messageSubjectLC, "teksystems invoice") Or _
+        Strings.InStr(messageSubjectLC, "has sent a time card for your approval") Or _
+        Strings.InStr(messageSubjectLC, "reminder! teksystems, inc. timecard approvals needed") Or _
+        Strings.InStr(messageSubjectLC, "from nextech solutions") Or _
+        Strings.InStr(messageSubjectLC, "system account request needs supervisor approval") Or _
+        Strings.InStr(objMailItem.Subject, "RQC Inbasket - Notice to Approve") Or _
+        Strings.InStr(messageSubjectLC, "4th source invoice") Or _
+        Strings.InStr(messageSubjectLC, "4thsource invoice")) > 0 Then
+
+        ' flag the email for follow-up today and move it
+        objMailItem.MarkAsTask (Outlook.OlMarkInterval.olMarkToday)
+        objMailItem.Save
+        
+        objMailItem.Move objNameSpace.GetDefaultFolder(olFolderInbox).Folders("Need Approval")
+        isMoved = True
+
+        GoTo StopProcessingRules
+
+    End If
+
+    '
+    ' Change email category to From VIP and move to sub folder
+    '
+    ' User lower case due to inconsistencies in sender email from Office 365
+    '   Strings.InStr(messageSenderEmailLC, Strings.LCase("/o=ExchangeLabs/ou=Exchange Administrative Group (FYDIBOHF23SPDLT)/cn=Recipients/cn=080507d5a3f14c0a968372f33766d241-Yanishevski")) Or _
+    '
+    errorAt = "Moving emails - from VIP"
+    If Strings.InStr(messageSenderEmailLC, Strings.LCase("/O=EXCHANGELABS/OU=EXCHANGE ADMINISTRATIVE GROUP (FYDIBOHF23SPDLT)/CN=RECIPIENTS/CN=A0101197F0EF438EB7F27C0281A86F99-PERRY, KEIT")) Or _
+        Strings.InStr(messageSenderEmailLC, Strings.LCase("/O=EXCHANGELABS/OU=EXCHANGE ADMINISTRATIVE GROUP (FYDIBOHF23SPDLT)/CN=RECIPIENTS/CN=4F08C789863E46798E7647D7421A9E33-SABLAUER, A")) Or _
+        Strings.InStr(messageSenderEmailLC, Strings.LCase("/O=EXCHANGELABS/OU=EXCHANGE ADMINISTRATIVE GROUP (FYDIBOHF23SPDLT)/CN=RECIPIENTS/CN=A8F856C8A39B44F993AB6415D0538E15-CALABRESE")) Or _
+        Strings.InStr(messageSenderEmailLC, Strings.LCase("/O=EXCHANGELABS/OU=EXCHANGE ADMINISTRATIVE GROUP (FYDIBOHF23SPDLT)/CN=RECIPIENTS/CN=7736023030FB4D0B9D25FE35D45D03C2-MCWILLIAMS")) Or _
+        Strings.InStr(messageSenderEmailLC, Strings.LCase("/O=EXCHANGELABS/OU=EXCHANGE ADMINISTRATIVE GROUP (FYDIBOHF23SPDLT)/CN=RECIPIENTS/CN=D560A5E930C442E798DA94E4451F4BD8-ELROD, BRIA")) Or _
+        Strings.InStr(messageSenderEmailLC, Strings.LCase("/O=EXCHANGELABS/OU=EXCHANGE ADMINISTRATIVE GROUP (FYDIBOHF23SPDLT)/CN=RECIPIENTS/CN=35F67E9D40D74E4D82A0CB6EF1C541FE-GEIGER, TER")) Or _
+        Strings.InStr(messageSenderEmailLC, Strings.LCase("/o=ExchangeLabs/ou=Exchange Administrative Group (FYDIBOHF23SPDLT)/cn=Recipients/cn=6c1b507f99c0464ca26226aecd79333b-Williamson,")) Or _
+        Strings.InStr(messageSenderEmailLC, Strings.LCase("/O=EXCHANGELABS/OU=EXCHANGE ADMINISTRATIVE GROUP (FYDIBOHF23SPDLT)/CN=RECIPIENTS/CN=A38FFA2A29F349F7A8AC2FEF3E8716B0-WILLIAMS, D")) Or _
+        Strings.InStr(messageSenderEmailLC, Strings.LCase("/O=EXCHANGELABS/OU=EXCHANGE ADMINISTRATIVE GROUP (FYDIBOHF23SPDLT)/CN=RECIPIENTS/CN=D7D037DA97364E77BA29BFF1683E91E8-SUH, ED")) Or _
+        Strings.InStr(objMailItem.SentOnBehalfOfName, "Downing, James") Or _
+        Strings.InStr(messageSenderEmailLC, "jzhang2") Or _
+        Strings.InStr(messageSenderEmailLC, Strings.LCase("/O=EXCHANGELABS/OU=EXCHANGE ADMINISTRATIVE GROUP (FYDIBOHF23SPDLT)/CN=RECIPIENTS/CN=5A9AD3846AB84F758BE84E943D8CA822-QUINN, MARY")) Or _
+        Strings.InStr(messageSenderEmailLC, "mquinn") > 0 Then
+
+        'Must already have an Outlook category already created - "From VIP"
+        successful = AddCategoryToItem(objMailItem, "From VIP")
+
+        If successful = False Then
+            MsgBox "Failed to set category From VIP for mailItem.  See log file for details: " & objMailItem
+            Call LogMessage(objMailItem, "Failed - Updated category to FROM VIP", "C:\OutlookMacroLogs\EmailMoveError.log")
+        End If
+        
+        objMailItem.Save
+
+        If logData Then
+            Call LogMessage(objMailItem, "Updated category to From VIP and moved to VIP folder", "C:\OutlookMacroLogs\ProcessMailRules.log")
+        End If
+        
+    End If
+    
+'
+' ****************** LogMessage - continue from here
+'
+    
+    '
+    ' Move paystub and expense payment emails
+    '
+    errorAt = "Moving emails - paystub"
+    If (Strings.InStr(messageSubjectLC, "employee pay stub") Or _
+        Strings.InStr(messageSubjectLC, "eft payment from st. jude")) > 0 Then
+        
+        objMailItem.Move objNameSpace.Folders("Online Archive - Darrell.Gentry@STJUDE.ORG").Folders("Pay Stubs / Expenses")
+        isMoved = True
+        GoTo StopProcessingRules
+    
+    End If
+       
+    '
+    ' Move Newsletters - HBR Manger Tip of the Day
+    '
+    errorAt = "Moving emails - newsletters"
+    If Strings.InStr(messageSenderEmailLC, "email.hbr.org") And _
+       Strings.InStr(messageSubjectLC, "management tip of the day") > 0 Then
+    
+        objMailItem.Move objNameSpace.Folders("Online Archive - Darrell.Gentry@STJUDE.ORG").Folders("Newsletters").Folders("HBR Management Tip Of The Day")
+        isMoved = True
+        GoTo StopProcessingRules
+
+    End If
+    
+    '
+    ' Move Newsletters - including St. Jude Today, St. Jude Insider Emails, Safe and Sound, Administrative Staff
+    '
+    errorAt = "Moving emails - newsletters"
+    If Strings.InStr(messageSenderEmailLC, "editors@fiercehealthit.com") Or _
+        Strings.InStr(messageSenderEmailLC, "cloudsupport@stjude.org") Or _
+        Strings.InStr(messageSenderEmailLC, "insight@healthcatalyst.com") Or _
+        Strings.InStr(messageSenderEmailLC, "marketing@bcbst-email.com") Or _
+        Strings.InStr(messageSenderEmailLC, "email.hbr.org") Or _
+        Strings.InStr(messageSenderEmailLC, "phemi.com") Or _
+        Strings.InStr(messageSubjectLC, "hrpp newsletter") Or _
+        Strings.InStr(messageSenderEmailLC, "limsinstitute.org") Or _
+        Strings.InStr(messageSenderEmail, "SafeAndSound@stjude.org") Or _
+        Strings.InStr(messageSenderEmail, "/O=EXCHANGELABS/OU=EXCHANGE ADMINISTRATIVE GROUP (FYDIBOHF23SPDLT)/CN=RECIPIENTS/CN=2A1229E77F8F4E1EB962FC2F9EC38F3C-ST. JUDE TO") Or _
+        Strings.InStr(messageSenderEmail, "promisemagazine@stjude.org") Or _
+        Strings.InStr(messageSenderEmail, "/O=EXCHANGELABS/OU=EXCHANGE ADMINISTRATIVE GROUP (FYDIBOHF23SPDLT)/CN=RECIPIENTS/CN=5D2F378E86834C70AF7784C89B5698C8-WALKER, ELI") Or _
+        Strings.InStr(messageRecipientsLC, "administrative staff") > 0 Then
+    
+        objMailItem.Move objNameSpace.Folders("Online Archive - Darrell.Gentry@STJUDE.ORG").Folders("Newsletters")
+        isMoved = True
+        GoTo StopProcessingRules
+
+    End If
+
+    '
+    ' Check for SRM Service Change Requests
+    '
+    '
+    errorAt = "Moving emails - SRM service change requests"
+    If Strings.InStr(messageSubjectLC, "srm.stjude.org-srm2 user feedback") Or _
+       Strings.InStr(messageSubjectLC, "srm order confirmation") > 0 Then
+
+        objMailItem.Move objNameSpace.Folders("Online Archive - Darrell.Gentry@STJUDE.ORG").Folders("RIS Requests").Folders("SRM2 Change Requests")
+        isMoved = True
+        GoTo StopProcessingRules
+    End If
+    
+    '
+    ' Check for performance review emails
+    '
+    '
+    errorAt = "Moving emails - performance review"
+    If Strings.InStr(objMailItem.Subject, "St. Jude Self-Review Completed") Or _
+        Strings.InStr(messageSubjectLC, "AAA") > 0 Then
+        
+        'objMailItem.MarkAsTask (Outlook.OlMarkInterval.olMarkThisWeek)
+        objMailItem.Move objNameSpace.GetDefaultFolder(olFolderInbox).Folders("Performance Reviews")
+        objMailItem.Save
+        isMoved = True
+        GoTo StopProcessingRules
+    End If
+    
+    '
+    ' Check for SRM2 feedback emails
+    '
+    '
+    errorAt = "Moving emails - srm2 feedback & order confirmation"
+    If Strings.InStr(messageSubjectLC, "srm.stjude.org-srm2 user feedback") Or _
+       Strings.InStr(messageSubjectLC, "srm order confirmation") > 0 Then
+        
+        objMailItem.Move objNameSpace.Folders("Online Archive - Darrell.Gentry@STJUDE.ORG").Folders("SRM2 User Feedback / Svc Change Requests")
+        isMoved = True
+        GoTo StopProcessingRules
+    End If
+    
+    '
+    ' Check for SJUID Google Analytics Emails
+    '
+    errorAt = "Moving emails - SJUID Google Analytics Emails"
+    If Strings.InStr(objMailItem.Subject, "SJUID Google Analytics Weekly Report") > 0 Then
+        objMailItem.Move objNameSpace.Folders("Online Archive - Darrell.Gentry@STJUDE.ORG").Folders("Research Systems").Folders("SJUID").Folders("Pageviews")
+        isMoved = True
+        GoTo StopProcessingRules
+    End If
+    
+    '
+    ' Check for St. Jude Cloud Google Analytics Emails
+    '
+    errorAt = "Moving emails - St. Jude Cloud Google Analytics Emails"
+    If Strings.InStr(objMailItem.Subject, "Google Analytics St. Jude Cloud Report") > 0 Then
+        objMailItem.Move objNameSpace.Folders("Online Archive - Darrell.Gentry@STJUDE.ORG").Folders("St. Jude Cloud").Folders("Analytics")
+        isMoved = True
+        GoTo StopProcessingRules
+    End If
+    
+    '
+    ' Move external emails - check for allowed senders (St. Jude email or vendors)
+    '
+    errorAt = "Moving external emails"
+    isMoved = moveIfExternal(objMailItem)
+    If isMoved Then
+        GoTo StopProcessingRules
+    End If
+    
+    errorAt = "End of email rules - Moving remaining emails"
+    
+    GoTo StopProcessingRules
+
+StopProcessingRules:
+
+    ' null out objects, close files, set return value and then exit
+    'destinationFolder = Nothing
+    If logData Then
+        Call LogMessage2("Stop Message Processing: " & Format(Now(), "m/d/yy h:m:s AMPM"), "C:\OutlookMacroLogs\ProcessMailRules.log")
+    End If
+
+    Close #1
+    ProcessMailRules = isMoved
+    Exit Function
+
+HandleError:
+
+    If logError Then
+        Close #1
+        Open "C:\OutlookMacroLogs\EmailMoveError.log" For Append As #1
+        Print #1, ""
+        Print #1, "An error occurred during ProcessMailRules"
+        Print #1, "   Date/Time: " & Format(Now(), "m/d/yy h:m:s AMPM")
+        Print #1, "   Err Number: " & Err.Number
+        Print #1, "   Err Desc: " & Err.Description
+        Print #1, "   Err - Help Context: " & Err.HelpContext
+        Print #1, "   Err - Help File: " & Err.HelpFile
+        Print #1, "   Err - Last DLL Error: " & Err.LastDllError
+        Print #1, "   Err - Source: " & Err.Source
+        Print #1, ""
+        Print #1, " Error at: " & errorAt
+        Print #1, ""
+        Print #1, "************************************************************"
+        Print #1, "   From: " & objMailItem.SenderEmailAddress
+        Print #1, "   To: " & objMailItem.To
+        Print #1, "   CC: " & objMailItem.CC
+        Print #1, "   BCC: " & objMailItem.BCC
+        Print #1, "   Subject: " & objMailItem.Subject
+        Print #1, "   Received: " & objMailItem.ReceivedTime
+'        Print #1, "   Message: " & objMailItem.Body
+        Print #1, "************************************************************"
+        Print #1, ""
+        Close #1
+    
+'        objMailItem.UnRead = True
+'        objMailItem.Save
+'        objMailItem.Move objNameSpace.GetDefaultFolder(olFolderInbox).Folders("Failed to move")
+    End If
+    
+End Function
+
+Function ProcessDeleteMailRules(objMailItem As Outlook.mailItem, _
+                                objOutlook As Outlook.Application, _
+                                objNameSpace As Outlook.nameSpace, _
+                                objSourceFolder As Outlook.MAPIFolder) As Boolean
+
+    '
+    '  ************** FUTURE ENHANCEMENTS
+    '    create function to check if okay to delete (return boolean), pass in sender, subject, & boolean to see if I am in the to, cc, or bcc list
+    '
+    '    Need to change messageSender & messageSenderLC to messageSenderEmail & messageSenderEmailLC
+    '
+
+    'MsgBox "In ProcessMailRules Function"
+    
+    On Error GoTo HandleError
+    
+    Dim destinationFolder As Outlook.MAPIFolder
+    Dim isMoved As Boolean
+    Dim destinationFolderName As String
+    Dim messageSubjectLC As String
+    Dim messageSenderEmailLC As String
+    Dim messageSenderEmail As String
+    Dim messageRecipientsLC As String
+    Dim inToList As Boolean
+    Dim inCCList As Boolean
+    Dim inBCCList As Boolean
+    Dim logData As Boolean
+    Dim logError As Boolean
+    Dim fromMe As Boolean
+    Dim sentToMe As Boolean
+    Dim successful As Boolean
+    Dim errorAt As String
+        
+    ' **************************************************************************************
+    ' set to TRUE to write to log file
+    'logData = True
+    logData = False
+    'logError = False
+    logError = True
+    ' **************************************************************************************
+    
+    errorAt = "start of delete mail processing"
+    
+    If logData Then
+        Call LogMessage2("Start Delete Mail Processing: " & Format(Now(), "m/d/yy h:m:s AMPM"), "C:\OutlookMacroLogs\ProcessMailRules.log")
+    End If
+    
+    
+    ' Check for null paramters - item
+    errorAt = "Checking for null paramters - objMailItem"
+    If IsNull(objMailItem) Then
+        Call LogMessage2(Format(Now(), "m/d/yy h:m:s AMPM") & "    NULL Paramter in ProcessMailRules: objMailItem", "C:\OutlookMacroLogs\ProcessMailRules.log")
+        MsgBox ("Module1.ProcessMailRules - Paramter NULL: objMailItem")
+        GoTo StopProcessingRules
+    End If
+    
+    ' Check for null paramters - item
+    errorAt = "Checking for null paramters - objOutlook"
+    If IsNull(objOutlook) Then
+        Call LogMessage2(Format(Now(), "m/d/yy h:m:s AMPM") & "    NULL Paramter in ProcessMailRules: objOutlook (Outlook.Application)", "C:\OutlookMacroLogs\ProcessMailRules.log")
+        MsgBox ("Module1.ProcessMailRules - Paramter NULL: objOutlook (Outlook.Application)")
+        GoTo StopProcessingRules
+    End If
+    
+    ' Check for null paramters - item
+    errorAt = "Checking for null paramters - objNameSpace"
+    If IsNull(objNameSpace) Then
+        Call LogMessage2(Format(Now(), "m/d/yy h:m:s AMPM") & "    NULL Paramter in ProcessMailRules: objNameSpace (Outlook.NameSpace)", "C:\OutlookMacroLogs\ProcessMailRules.log")
+        MsgBox ("Module1.ProcessMailRules - Paramter NULL: objNameSpace (Outlook.NameSpace)")
+        GoTo StopProcessingRules
+    End If
+    
+    ' Check for null paramters - item
+    errorAt = "Checking for null paramters - objSourceFolder"
+    If IsNull(objSourceFolder) Then
+        Call LogMessage2(Format(Now(), "m/d/yy h:m:s AMPM") & "    NULL Paramter in ProcessMailRules: objSourceFolder (Outlook.MAPIFolder)", "C:\OutlookMacroLogs\ProcessMailRules.log")
+        MsgBox ("Module1.ProcessMailRules - Paramter NULL: objSourceFolder (Outlook.MAPIFolder)")
+        GoTo StopProcessingRules
+    End If
+
+       
+    ' Do NOT call DoEvents to allow the OS to continue with event processing
+    '   This is causing many issues with Outlook locking up during the macro execution
+    'DoEvents (leave commented out)
+    
+    If objMailItem.Class <> olMail Then
+        isMoved = False
+        GoTo StopProcessingRules
+    End If
+    
+    If logData Then
+            Call LogMessage(objMailItem, "Processing Email", "C:\OutlookMacroLogs\ProcessMailRules.log")
+            Call LogMessage2(objMailItem.Subject, "C:\OutlookMacroLogs\ProcessMailRules.log")
+    End If
+    
+    'initialize email variables
+    errorAt = "initialize email variables"
+    messageSubjectLC = Strings.LCase(objMailItem.Subject)
+    messageSenderEmailLC = Strings.LCase(objMailItem.SenderEmailAddress)
+    messageSenderEmail = objMailItem.SenderEmailAddress
+    messageRecipientsLC = Strings.LCase(objMailItem.To & "," & objMailItem.CC & "," & objMailItem.BCC)
+    
+    
+    ' initialize booleans to set flags
+    sentToMe = False
+    fromMe = False
+    inToList = False
+    inCCList = False
+    inBCCList = False
+      
+    
+    ' check for name in TO list
+    errorAt = "checking for name in To list"
+    If Strings.InStr(Strings.LCase(objMailItem.To), "gentry, d") Then
+        sentToMe = True
+        inToList = True
+    End If
+    
+    ' check for name in CC list
+    errorAt = "checking for name in CC list"
+    If Strings.InStr(Strings.LCase(objMailItem.CC), "gentry, d") Then
+        sentToMe = True
+        inCCList = True
+    End If
+
+    ' check for name in BCC list
+    errorAt = "checking for name in BCC list"
+    If Strings.InStr(Strings.LCase(objMailItem.BCC), "gentry, d") Then
+        sentToMe = True
+        inBCCList = True
+    End If
+    
+    ' check for my name in FROM
+    errorAt = "checking for name in From"
+    If Strings.InStr(Strings.LCase(objMailItem.SenderEmailAddress), "gentry, d") Then
+        fromMe = True
+    End If
+    
+    'MsgBox "Subject = " & objMailItem.Subject
+    'MsgBox "sentToMe = " & sentToMe
+    'MsgBox "Sender = " & objMailItem.SenderEmailAddress & "  fromMe = " & fromMe
+    
+    ' **********************************************************************************************************
+    '         Start of rules
+    ' **********************************************************************************************************
+
+    '
+    ' Delete system emails that I no longer support directly, unless sent directly to me
+    '        Strings.InStr(objMailItem.Recipients, "ResearchApplicationDevelopment@stjude.org") Or _
+
+    errorAt = "Delete system emails - older systems"
+    
+    If Strings.InStr(objMailItem.To, "SRM@stjude.org") Or _
+        Strings.InStr(objMailItem.CC, "SRM@stjude.org") Or _
+       Strings.InStr(objMailItem.To, "SRM") Or _
+       Strings.InStr(objMailItem.CC, "SRM") Or _
+       Strings.InStr(objMailItem.To, "IS RI Research Application Development") Or _
+       Strings.InStr(objMailItem.To, "IS RI Account Maintenance") Or _
+       Strings.InStr(messageSubjectLC, "Aaaa") > 0 Then
+        
+        ' Do not delete if sent directly to me
+        If (sentToMe) = False Then
+            objMailItem.Move objNameSpace.GetDefaultFolder(olFolderDeletedItems)
+            isMoved = True
+            If logData Then
+                Call LogMessage(objMailItem, "Deleted system emails - older systems", "C:\OutlookMacroLogs\ProcessMailRules.log")
+            End If
+            GoTo StopProcessingRules
+        End If
+
+    End If
+    
+    '
+    ' Emails to delete - By Subject Only (ALWAYS delete - even if sent to me)
+    '
+    errorAt = "deleting emails by subject (even if sent to me)"
+    If Strings.InStr(messageSubjectLC, "your mailbox is almost full") Or _
+       Strings.InStr(messageSubjectLC, "[junk e-mail report]") Or _
+       Strings.InStr(objMailItem.To, "reportedspam@stjude.org") Or _
+       Strings.InStr(messageSubjectLC, "aaa") > 0 Then
+        
+        objMailItem.Move objNameSpace.GetDefaultFolder(olFolderDeletedItems)
+
+        isMoved = True
+        If logData Then
+            Call LogMessage(objMailItem, "Deleted mailbox full or junk email report", "C:\OutlookMacroLogs\ProcessMailRules.log")
+        End If
+        GoTo StopProcessingRules
+
+    End If
+
+    '
+    ' Emails to delete - By Subject Only (unless sent to me)
+    '
+    errorAt = "deleting emails - test environment"
+    If Strings.InStr(messageSubjectLC, "srmdmutil01.stjude.org:8080-error sending bill") Or _
+       Strings.InStr(messageSubjectLC, "srmdmqa03.stjude.org:8080-error sending bill") Or _
+       Strings.InStr(objMailItem.Subject, "SAR1 Account Forms") Or _
+       Strings.InStr(objMailItem.Subject, "Windows Updates (Non-Production/DMZ)") Or _
+       Strings.InStr(messageSubjectLC, "name change request") Or _
+       Strings.InStr(objMailItem.Subject, "Tomcat Restart Status SUCCEEDED for SRM2 Stage") Or _
+       Strings.InStr(objMailItem.Subject, "*TrakIT AutoMail* - Automatic Publication Import Process Report") Or _
+       Strings.InStr(objMailItem.Subject, "*TrakIT AutoMail* - Add publication to stjude.org") Or _
+       Strings.InStr(objMailItem.Subject, "Automatic PMC ID update process - Results") Or _
+       Strings.InStr(messageSubjectLC, "lmicro-d1 - exception message") > 0 Then
+        ' Do not delete if sent directly to me
+        If (sentToMe) = False Then
+            objMailItem.Move objNameSpace.GetDefaultFolder(olFolderDeletedItems)
+            isMoved = True
+            If logData Then
+                Call LogMessage(objMailItem, "Deleted test environemnt email for error sending to Lawson", "C:\OutlookMacroLogs\ProcessMailRules.log")
+            End If
+            GoTo StopProcessingRules
+        End If
+    End If
+
+    '
+    ' Delete TrakIT Author Notifications
+    '
+    '
+    errorAt = "Deleting email - TrakIT Publication Notification"
+    If Strings.InStr(objMailItem.Subject, "TrakIt: Shared Resource Director's Query") Or _
+        Strings.InStr(objMailItem.Subject, "Publications are ready for you to Review Shared Resources Usage in the TrakIT system") Or _
+        Strings.InStr(objMailItem.Subject, "Publications are ready for you to review in the TrakIT system") > 0 Then
+        
+        If (sentToMe) = False Then
+            objMailItem.Move objNameSpace.GetDefaultFolder(olFolderDeletedItems)
+            isMoved = True
+            
+            If logData Then
+                Call LogMessage(objMailItem, "Deleted TrakIT Publication Notification Email", "C:\OutlookMacroLogs\ProcessMailRules.log")
+            End If
+            
+            GoTo StopProcessingRules
+        End If
+
+    End If
+    
+    '
+    ' Move TrakIT External Publication Alerts
+    '
+    '
+    errorAt = "Moving emails - Notifications"
+    If Strings.InStr(messageRecipientsLC, "trakit external publication group") Or _
+       Strings.InStr(messageRecipientsLC, "automatic pmc id update process - results") > 0 Then
+
+        objMailItem.Move objNameSpace.GetDefaultFolder(olFolderDeletedItems)
+'        objMailItem.Move objNameSpace.Folders("Online Archive - Darrell.Gentry@STJUDE.ORG").Folders("System Alerts").Folders("TrakIT Notifications")
+        isMoved = True
+            If logData Then
+                Call LogMessage(objMailItem, "Moved TrakIT Notification Email", "C:\OutlookMacroLogs\ProcessMailRules.log")
+            End If
+        GoTo StopProcessingRules
+    End If
+    
+
+    '
+    ' Delete Jenkins alert emails
+    '
+    errorAt = "Deleting emails - Jenkins build alerts"
+    If Strings.InStr(messageSubjectLC, "build failed in jenkins") Or _
+       Strings.InStr(messageSubjectLC, "jenkins build is back to normal") Or _
+       Strings.InStr(messageSubjectLC, "AAA") > 0 Then
+
+        ' Do not move if sent directly to me
+        If (sentToMe) = False Then
+            objMailItem.Move objNameSpace.GetDefaultFolder(olFolderDeletedItems)
+            isMoved = True
+            If logData Then
+                Call LogMessage(objMailItem, "Moved Jenkins build alert email", "C:\OutlookMacroLogs\ProcessMailRules.log")
+            End If
+        
+            GoTo StopProcessingRules
+       
+        End If
+    End If
+    
+    '
+    ' Delete LabAlerts system emails (unless sent directly to me)
+    '
+    errorAt = "Delete emails - LabAlert"
+    If Strings.InStr(messageSubjectLC, "error in sjcrh-hc | labalert, v 1.0") Or _
+       Strings.InStr(messageSubjectLC, "AAA") > 0 Then
+
+        ' Do not move if sent directly to me
+        If (sentToMe) = False Then
+            objMailItem.Move objNameSpace.GetDefaultFolder(olFolderDeletedItems)
+            isMoved = True
+            If logData Then
+                Call LogMessage(objMailItem, "Delete email - labalert", "C:\OutlookMacroLogs\ProcessMailRules.log")
+            End If
+        
+            GoTo StopProcessingRules
+       
+        End If
+    End If
+    
+    '
+    ' Delete JIRA emails (except CSTN project)
+    '
+    errorAt = "Delete emails - JIRA"
+    If Strings.InStr(messageSenderEmail, "noreply@STJUDE.ORG") Then
+        If Strings.InStr(objMailItem.Subject, "[JIRA]") Then
+            If Strings.InStr(objMailItem.Subject, "[JIRA] (CSTNPORTAL") Then
+                ' ignore and stop processing if CSTN project email
+                GoTo StopProcessingRules
+            Else
+               objMailItem.Move objNameSpace.GetDefaultFolder(olFolderDeletedItems)
+                isMoved = True
+                If logData Then
+                    Call LogMessage(objMailItem, "Moved JIRA email", "C:\OutlookMacroLogs\ProcessMailRules.log")
+                End If
+                GoTo StopProcessingRules
+
+            End If
+        End If
+    End If
+    
+    '
+    ' *** Delete By Recipient
+    '
+    ' Reason to delete
+    '    Recipient = trakit external publication group : TBD
+    '    Recipient = milli user : I'm not a MILLI user
+    '
+    errorAt = "Deleting emails - (recipient)"
+    If Strings.InStr(messageRecipientsLC, "Trakit external publication group") Or _
+       Strings.InStr(messageRecipientsLC, "AA") > 0 Then
+
+        ' Do not delete if sent to me instead of the group
+        If (sentToMe) = False Then
+            objMailItem.Move objNameSpace.GetDefaultFolder(olFolderDeletedItems)
+            isMoved = True
+            GoTo StopProcessingRules
+        End If
+    End If
+
+    '
+    ' SRM2 Alerts - Move System Errors Emails to Application Alerts Folder (Group 1)
+    '
+    errorAt = "Moving emails - SRM2 system alerts (group 1)"
+    '            Call LogMessage(objMailItem, "Deleted mailbox full or junk email report", "C:\OutlookMacroLogs\ProcessMailRules.log")
+    
+    If (Strings.InStr(messageSubjectLC, "srm.stjude.org - exception message") Or _
+        Strings.InStr(messageSubjectLC, "synchronization job error") Or _
+        Strings.InStr(messageSubjectLC, "sql server job system") Or _
+        Strings.InStr(messageSubjectLC, "error archiving plate name") Or _
+        Strings.InStr(messageSubjectLC, "error in sjcrh-hc") Or _
+        Strings.InStr(messageSubjectLC, "file archival failure error") Or _
+        Strings.InStr(messageSubjectLC, "host down alert") Or _
+        Strings.InStr(messageSubjectLC, "a ccl call returned an error") Or _
+        Strings.InStr(messageSubjectLC, "http://srm.stjude.org/srm - http content[html/asp] on device[sjm5vlpsrm01.stjude.org]") Or _
+        Strings.InStr(objMailItem.Subject, "** Service RECOVERY alert - sjm5vlpsrm01/SRM 2 URL is OK") Or _
+        Strings.InStr(objMailItem.Subject, "** Service PROBLEM alert - sjm5vlpsrm01/SRM 2 URL is WARNING") Or _
+        Strings.InStr(objMailItem.Subject, "srm.stjude.org - Deliverables are in processing") Or _
+        Strings.InStr(objMailItem.Subject, "Charge Item Definition Information") Or _
+        Strings.InStr(messageSubjectLC, "problem host alert") Or _
+        Strings.InStr(messageSubjectLC, "srm.stjude.org-error sending bill to finianial services") Or _
+        Strings.InStr(objMailItem.Subject, "Tomcat Restart Status SUCCEEDED for SRM2 Prod on sjm5vlpsrm01") Or _
+        Strings.InStr(messageSubjectLC, "recovery host alert") Or _
+        Strings.InStr(objMailItem.Subject, "srm.stjude.org-Unable to Perform Lawson Sync Job") Or _
+        Strings.InStr(messageSubjectLC, "sjcrh:alert:cbtlab account lockout fired") Or _
+        Strings.InStr(messageSubjectLC, "srm.stjude.org-error sending bill") Or _
+        Strings.InStr(messageSubjectLC, Strings.LCase("srm.stjude.org - Lawson Account Owner sync issues")) Or _
+        Strings.InStr(messageSubjectLC, Strings.LCase("srm.stjude.org - Lawson Account not in SRM")) Or _
+        Strings.InStr(messageSubjectLC, "pgagent restart status for srm2 prod db")) > 0 Then
+
+        ' Do not move if sent to me instead of the group
+        If (sentToMe) = False Then
+            objMailItem.Move objNameSpace.GetDefaultFolder(olFolderDeletedItems)
+            isMoved = True
+            GoTo StopProcessingRules
+        End If
+    End If
+    
+    '
+    ' SRM2 Alerts - Move System Errors Emails to Application Alerts Folder (Group 2)
+    '
+    errorAt = "Moving emails - SRM2 system alerts (group 2)"
+    If Strings.InStr(objMailItem.Subject, "Sample(s) transfer to Prima failed - details inside") Or _
+        Strings.InStr(messageSubjectLC, "pgagent restart status for srm2 prod db") > 0 Then
+
+            ' Do not move if sent to me instead of the group
+            If (sentToMe) = False Then
+                objMailItem.Move objNameSpace.GetDefaultFolder(olFolderDeletedItems)
+                isMoved = True
+                GoTo StopProcessingRules
+            End If
+        End If
+    
+    '
+    ' Move System Errors Emails to Application Alerts Folder
+    '
+    errorAt = "Moving emails - TrakIT"
+    If (Strings.InStr(messageSubjectLC, "problem alert - hc-jprod/trakit is critical") Or _
+        Strings.InStr(messageSubjectLC, "recovery alert - hc-jprod/trakit is ok") Or _
+        Strings.InStr(objMailItem.Subject, "ERROR: EXTERNAL PUBLICATION IMPORT FAILED DUE TO INVALID SOURCE") Or _
+        Strings.InStr(messageSubjectLC, "PROBLEM alert - hc-jprod/trakit is CRITICAL")) > 0 Then
+        
+        ' Do not move if sent to me instead of the group
+        If (sentToMe) = False Then
+            objMailItem.Move objNameSpace.GetDefaultFolder(olFolderDeletedItems)
+            isMoved = True
+            GoTo StopProcessingRules
+        End If
+    End If
+    
+    '
+    ' Move Datamart job emails to Application Alerts Folder
+    '
+    errorAt = "Moving emails - Datamart job"
+    If (Strings.InStr(messageSubjectLC, "srm.stjude.org - datamart job refresh") Or _
+        Strings.InStr(messageSubjectLC, "srm.stjude.org - datamart messages not processed") Or _
+        Strings.InStr(messageSubjectLC, "AAA")) > 0 Then
+        
+        ' Do not move if sent to me instead of the group
+        If (sentToMe) = False Then
+            objMailItem.Move objNameSpace.GetDefaultFolder(olFolderDeletedItems)
+            isMoved = True
+            GoTo StopProcessingRules
+        End If
+    End If
+    
+    '
+    ' Move LMicro System Errors Emails to Application Alerts Folder
+    '
+    errorAt = "Moving emails - LMicro"
+    If Strings.InStr(messageSubjectLC, "lmicro advanced search sync job failed") Or _
+       Strings.InStr(messageSubjectLC, "light microscopy: archive process failed") Or _
+       Strings.InStr(messageSubjectLC, "lmicro - exception message") Or _
+       Strings.InStr(objMailItem.Subject, "Resource Information updated: Nikon Widefield") Or _
+       Strings.InStr(messageSubjectLC, "programmatic rollback notification") Or _
+       Strings.InStr(messageSubjectLC, "lmicro data sync job failed") > 0 Then
+        
+        ' Do not move if sent to me instead of the group
+        If (sentToMe) = False Then
+            objMailItem.Move objNameSpace.GetDefaultFolder(olFolderDeletedItems)
+            isMoved = True
+            GoTo StopProcessingRules
+        End If
+    End If
+    
+    '
+    ' Move other system alert emails to Application Alerts Folder
+    '
+    errorAt = "Moving emails - other system alerts"
+    If Strings.InStr(objMailItem.Subject, "Jenkins build is back to normal") Or _
+       Strings.InStr(objMailItem.Subject, "Build failed in Jenkins") > 0 Then
+        
+        objMailItem.Move objNameSpace.GetDefaultFolder(olFolderDeletedItems)
+        isMoved = True
+        GoTo StopProcessingRules
+    End If
+    
+    '
+    ' Move LMicro Informational Emails
+    '
+    errorAt = "Moving emails - LMicro informational"
+    If Strings.InStr(messageSubjectLC, "light microscopy: success for reservation") Or _
+        Strings.InStr(messageSubjectLC, "light microscopy: booking confirmation") Or _
+        Strings.InStr(messageSubjectLC, "light microscopy: reservation update notice") Or _
+        Strings.InStr(messageSubjectLC, "light microscopy: technician not available") Or _
+        Strings.InStr(messageSubjectLC, "light microscopy: staff member not available") Or _
+        Strings.InStr(messageSubjectLC, "light microscopy: booking cancellation confirmation") Or _
+        Strings.InStr(messageSubjectLC, "cti light microscopy divison: reservation reminder") Or _
+        Strings.InStr(messageSubjectLC, "resource information updated") Or _
+        Strings.InStr(messageSubjectLC, "light microscopy: reservation update notice") > 0 Then
+
+        objMailItem.UnRead = False
+        objMailItem.Save
+        
+        ' Do not move if sent to me instead of the group
+        If (sentToMe) = False Then
+            objMailItem.Move objNameSpace.GetDefaultFolder(olFolderDeletedItems)
+            isMoved = True
+            GoTo StopProcessingRules
+        End If
+    End If
+
+    '
+    ' Move Help Desk auto response emails
+    '
+    errorAt = "Moving emails - Help Desk auto response"
+    If Strings.InStr(messageSubjectLC, "thank you for contacting is helpdesk after hours") Or _
+        Strings.InStr(messageSubjectLC, "AAAA") > 0 Then
+
+        objMailItem.UnRead = False
+        objMailItem.Save
+        
+        objMailItem.Move objNameSpace.GetDefaultFolder(olFolderDeletedItems)
+        isMoved = True
+        GoTo StopProcessingRules
+    End If
+    
+    GoTo StopProcessingRules
+
+StopProcessingRules:
+
+    ' null out objects, close files, set return value and then exit
+    'destinationFolder = Nothing
+    If logData Then
+        Call LogMessage2("Stop Message Processing: " & Format(Now(), "m/d/yy h:m:s AMPM"), "C:\OutlookMacroLogs\ProcessMailRules.log")
+    End If
+
+    Close #1
+    ProcessDeleteMailRules = isMoved
+    Exit Function
+
+HandleError:
+
+    If logError Then
+        Close #1
+        Open "C:\OutlookMacroLogs\EmailMoveError.log" For Append As #1
+        Print #1, ""
+        Print #1, "An error occurred during ProcessMailRules"
+        Print #1, "   Date/Time: " & Format(Now(), "m/d/yy h:m:s AMPM")
+        Print #1, "   Err Number: " & Err.Number
+        Print #1, "   Err Desc: " & Err.Description
+        Print #1, "   Err - Help Context: " & Err.HelpContext
+        Print #1, "   Err - Help File: " & Err.HelpFile
+        Print #1, "   Err - Last DLL Error: " & Err.LastDllError
+        Print #1, "   Err - Source: " & Err.Source
+        Print #1, ""
+        Print #1, " Error at: " & errorAt
+        Print #1, ""
+        Print #1, "************************************************************"
+        Print #1, "   From: " & objMailItem.SenderEmailAddress
+        Print #1, "   To: " & objMailItem.To
+        Print #1, "   CC: " & objMailItem.CC
+        Print #1, "   BCC: " & objMailItem.BCC
+        Print #1, "   Subject: " & objMailItem.Subject
+        Print #1, "   Received: " & objMailItem.ReceivedTime
+'        Print #1, "   Message: " & objMailItem.Body
+        Print #1, "************************************************************"
+        Print #1, ""
+        Close #1
+    
+'        objMailItem.UnRead = True
+'        objMailItem.Save
+'        objMailItem.Move objNameSpace.GetDefaultFolder(olFolderInbox).Folders("Failed to move")
+    End If
+    
+End Function
