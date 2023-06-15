@@ -1,0 +1,93 @@
+Option Explicit
+
+Public Sub ShowMessage(item As Outlook.mailItem)
+    '
+    ' IMPORTANT: In order for this script to be processed as an Outlook rule, the definition
+    '            must be setup EXACTLY as shown:
+    '
+    '       Public Sub ShowMessage(Item As Outlook.MailItem)
+    '
+    '
+    '
+    Dim objOutlook As Outlook.Application
+    Dim objNameSpace As Outlook.nameSpace
+    Dim objSourceFolder As Outlook.MAPIFolder
+    Dim myOutlookExplorer As Outlook.Explorer
+    Dim tempBoolean As Boolean
+        
+    'Set myOutlookExplorer = Application.ActiveExplorer
+    Set objOutlook = Application
+    Set objNameSpace = objOutlook.GetNamespace("MAPI")
+    
+    '
+    ' This statement will allow the system to process and helps in canceling the macro or
+    ' continue to use Outlook in the background.  However, do NOT call DoEvents
+    '     This is causing many issues with Outlook locking up during the macro execution
+    'DoEvents (leave commented out)
+
+    On Error GoTo HandleError
+    
+'    Close #2
+'    Open "C:\OutlookMacroLogs\ThisOutlookSessionMacro.log" For Append As #2
+'    Print #2, ""
+'    Print #2, "************************************************************"
+'    Print #2, "Processing mail in ThisOutlookSession.ShowMessage"
+'    Print #2, "   Date/Time: " & Format(Now(), "m/d/yy h:m:s AMPM")
+'    Print #2, ""
+'    Print #2, "   From: " & item.SenderEmailAddress
+'    Print #2, "   Received: " & item.ReceivedTime
+'    Print #2, "   To: " & item.To
+'    Print #2, "   CC: " & item.CC
+'    Print #2, "   BCC: " & item.BCC
+'    Print #2, "   Subject: " & item.Subject
+'    Print #2, "************************************************************"
+'    Close #2
+    
+    '
+    ' Ignore all Outlook.mailItems that are not email
+    '
+    If item.Class = olMail Then
+        '
+        ' Call the ProcessMailRules macro
+        '
+        'Dim mailItem As Outlook.mailItem
+        'Set mailItem = Item
+        
+'        Application.ActiveExplorer.CommandBars.ExecuteMso ("DisableAutoSendReceive")
+        ' MoveSentMessagesToInbox
+        tempBoolean = ProcessMailRules(item, objOutlook, objNameSpace, objSourceFolder)
+'        Application.ActiveExplorer.CommandBars.ExecuteMso ("DisableAutoSendReceive")
+    Else
+        Close #2
+        Open "C:\OutlookMacroLogs\ThisOutlookSessionMacro.log" For Append As #2
+        Print #2, "************************************************************"
+        Print #2, "*****         Item is not a olMail class type          *****"
+        Print #2, "************************************************************"
+        Print #2, ""
+    End If
+  
+    Exit Sub
+
+HandleError:
+    Close #2
+    Open "C:\OutlookMacroLogs\ThisOutlookSessionMacro.log" For Append As #2
+    Print #2, ""
+    Print #2, "An error occurred during ThisOutlookSession.ShowMessage"
+    Print #2, "   Date/Time: " & Format(Now(), "m/d/yy h:m:s AMPM")
+    Print #2, "   Err Number: " & Err.Number
+    Print #2, "   Err Desc: " & Err.Description
+    Print #2, "   Err - Help Context: " & Err.HelpContext
+    Print #2, "   Err - Help File: " & Err.HelpFile
+    Print #2, "   Err - Last DLL Error: " & Err.LastDllError
+    Print #2, "   Err - Source: " & Err.Source
+    Print #2, ""
+    Print #2, "   From: " & item.SenderEmailAddress
+    Print #2, "   To: " & item.To
+    Print #2, "   Subject: " & item.Subject
+    Print #2, "   Received: " & item.ReceivedTime
+'    Print #2, "   Message: " & item.Body
+    Print #2, "************************************************************"
+    Print #2, ""
+    Close #2
+    
+End Sub
